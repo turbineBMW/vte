@@ -226,6 +226,29 @@ public:
                                                   int height,
                                                   vte::color::rgb const* color) const = 0;
 
+        /* Draws the source rectangle (src_x, src_y, src_width, src_height)
+         * of the image, scaled to fill the destination rectangle
+         * (dst_x, dst_y, dst_width, dst_height), clipped to the clip rectangle.
+         */
+        virtual void draw_image(
+#if VTE_GTK == 3
+                                cairo_surface_t* surface,
+#elif VTE_GTK == 4
+                                GdkTexture* texture,
+#endif
+                                int src_x,
+                                int src_y,
+                                int src_width,
+                                int src_height,
+                                double dst_x,
+                                double dst_y,
+                                double dst_width,
+                                double dst_height,
+                                int clip_x,
+                                int clip_y,
+                                int clip_width,
+                                int clip_height) const = 0;
+
         void draw_undercurl(int x,
                             double y,
                             double line_width,

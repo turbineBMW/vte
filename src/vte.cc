@@ -3681,13 +3681,14 @@ Terminal::insert_image(ProcessingContext& context,
         auto const width = (image_width_px + m_cell_width_unscaled - 1) / m_cell_width_unscaled;
         auto const height = (image_height_px + m_cell_height_unscaled - 1) / m_cell_height_unscaled;
 
-        m_screen->row_data->append_image(std::move(image_surface),
-                                         image_width_px,
-                                         image_height_px,
-                                         left,
-                                         top,
-                                         m_cell_width_unscaled,
-                                         m_cell_height_unscaled);
+        m_screen->row_data->append_image
+                (std::make_unique<vte::image::Image>(std::move(image_surface),
+                                                     image_width_px,
+                                                     image_height_px,
+                                                     left,
+                                                     top,
+                                                     m_cell_width_unscaled,
+                                                     m_cell_height_unscaled));
 
         /* Erase characters under the image. Since this inserts content, we need
          * to update the processing context's bbox.
@@ -9634,6 +9635,12 @@ Terminal::draw_rows(VteScreen *screen_,
 
         m_draw.flush_background(bg_rect);
 
+#if WITH_SIXEL
+        /* Images stacked between the cell backgrounds and the text */
+        draw_images(start_row, end_row - 1,
+                    vte::image::k_z_below_background, -1);
+#endif
+
         /* Render the text.
          * The rect contains the area of the row (enlarged a bit at the top and bottom
          * to allow the text to overdraw a bit), and is moved row-wise in the loop.
@@ -9825,6 +9832,51 @@ Terminal::cursor_rect()
 
         return {int(x), int(y), int(cursor_width), int(height)};
 }
+
+#if WITH_SIXEL
+
+/* Paints all images of the current screen that intersect the given row
+ * range and whose z-index is within [z_min, z_max], in stacking order. */
+void
+Terminal::draw_images(vte::grid::row_t top_row,
+                      vte::grid::row_t bottom_row,
+                      int32_t z_min,
+                      int32_t z_max)
+{
+        if (!m_images_enabled)
+                return;
+
+        auto const& image_map = m_screen->row_data->image_map();
+        if (image_map.empty())
+                return;
+
+        auto images = std::vector<vte::image::Image const*>{};
+        for (auto const& [priority, image] : image_map) {
+                if (image->z() < z_min || image->z() > z_max)
+                        continue;
+                if (!image->intersects_rows(top_row, bottom_row))
+                        continue;
+
+                images.push_back(image.get());
+        }
+
+        if (images.empty())
+                return;
+
+        /* Lower z-index first; equal z-index in insertion order */
+        std::stable_sort(images.begin(), images.end(),
+                         [](auto const* a, auto const* b) noexcept {
+                                 return a->z() < b->z();
+                         });
+
+        for (auto const* image : images) {
+                auto const x = int(image->get_left() * m_cell_width);
+                auto const y = int(row_to_pixel(image->get_top()));
+                image->paint(m_draw, x, y, m_cell_width, m_cell_height);
+        }
+}
+
+#endif /* WITH_SIXEL */
 
 void
 Terminal::paint_cursor()
@@ -10204,13 +10256,26 @@ Terminal::draw(cairo_region_t const* region) noexcept
 
         /* and now paint them */
         auto const first_row = first_displayed_row();
+        auto const last_row = last_displayed_row();
+
+#if WITH_SIXEL
+        /* Images stacked below everything, including cell backgrounds */
+        draw_images(first_row, last_row,
+                    G_MININT32, vte::image::k_z_below_background - 1);
+#endif
+
         draw_rows(m_screen,
                   region,
                   first_row,
-                  last_displayed_row() + 1,
+                  last_row + 1,
                   row_to_pixel(first_row),
                   m_cell_width,
                   m_cell_height);
+
+#if WITH_SIXEL
+        /* Images stacked above the text */
+        draw_images(first_row, last_row, 0, G_MAXINT32);
+#endif
 
 	paint_im_preedit_string();
 

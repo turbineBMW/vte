@@ -133,7 +133,7 @@
 
 #define VTE_TERMINFO_NAME "xterm-256color"
 
-#define VTE_SIXEL_ENABLED_DEFAULT false
+#define VTE_SIXEL_ENABLED_DEFAULT true
 
 #define VTE_SIXEL_MAX_WIDTH (2048)
 #define VTE_SIXEL_MAX_HEIGHT (2052)

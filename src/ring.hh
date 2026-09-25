@@ -264,8 +264,16 @@ private:
         using image_by_top_map_type = std::multimap<row_t, vte::image::Image*>;
         image_by_top_map_type m_image_by_top_map{};
 
+        size_t m_image_prune_counter{0};
+
         void image_gc() noexcept;
         void image_gc_region() noexcept;
+        void image_prune_scrolled_out() noexcept;
+        void image_maybe_prune_scrolled_out() noexcept
+        {
+                if ((++m_image_prune_counter & 0xff) == 0)
+                        image_prune_scrolled_out();
+        }
         void unlink_image_from_top_map(vte::image::Image const* image) noexcept;
         void rebuild_image_top_map() /* throws */;
         bool rewrap_images_in_range(image_by_top_map_type::iterator& it,
@@ -275,14 +283,48 @@ private:
 
 public:
         auto const& image_map() const noexcept { return m_image_map; }
+        auto image_count() const noexcept { return m_image_map.size(); }
 
-        void append_image(vte::Freeable<cairo_surface_t> surface,
-                          int pixelwidth,
-                          int pixelheight,
-                          long left,
-                          long top,
-                          long cell_width,
-                          long cell_height) /* throws */;
+        /* Takes ownership of @image and returns a pointer to it, or nullptr
+         * if the image could not be added. */
+        vte::image::Image* append_image(std::unique_ptr<vte::image::Image> image) /* throws */;
+
+        void remove_image(vte::image::Image const* image) noexcept;
+
+        /* Removes all images for which @pred returns true; returns the
+         * number of images removed. */
+        template<typename Pred>
+        size_t remove_images_if(Pred&& pred) noexcept
+        {
+                auto n = size_t{0};
+                for (auto it = m_image_map.begin(); it != m_image_map.end(); ) {
+                        auto const& image = it->second;
+                        if (pred(*image)) {
+                                m_image_fast_memory_used -= image->resource_size();
+                                unlink_image_from_top_map(image.get());
+                                it = m_image_map.erase(it);
+                                ++n;
+                        } else {
+                                ++it;
+                        }
+                }
+                return n;
+        }
+
+        template<typename Func>
+        void for_each_image(Func&& func) const
+        {
+                for (auto const& [priority, image] : m_image_map)
+                        func(*image);
+        }
+
+        bool has_image_with_id(uint32_t image_id) const noexcept
+        {
+                for (auto const& [priority, image] : m_image_map)
+                        if (image->image_id() == image_id)
+                                return true;
+                return false;
+        }
 
 
 #endif /* WITH_SIXEL */

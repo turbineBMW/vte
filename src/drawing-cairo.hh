@@ -81,6 +81,20 @@ public:
                                           int height,
                                           vte::color::rgb const* color) const override;
 
+        void draw_image(cairo_surface_t* surface,
+                        int src_x,
+                        int src_y,
+                        int src_width,
+                        int src_height,
+                        double dst_x,
+                        double dst_y,
+                        double dst_width,
+                        double dst_height,
+                        int clip_x,
+                        int clip_y,
+                        int clip_width,
+                        int clip_height) const override;
+
         void draw_text(TextRequest* requests,
                        gsize n_requests,
                        uint32_t attr,

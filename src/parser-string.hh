@@ -35,7 +35,7 @@ typedef struct vte_seq_string_t {
 
 #define VTE_SEQ_STRING_DEFAULT_CAPACITY (1 << 7) /* must be power of two */
 
-#define VTE_SEQ_STRING_MAX_CAPACITY     (1 << 12)
+#define VTE_SEQ_STRING_MAX_CAPACITY     (1 << 15)
 
 /*
  * vte_seq_string_init:

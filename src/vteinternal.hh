@@ -1016,6 +1016,12 @@ public:
                                        int len);
 
         #if WITH_SIXEL
+        void kitty_graphics_command(vte::parser::Sequence const& seq,
+                                    std::u32string_view str);
+        void draw_images(vte::grid::row_t top_row,
+                         vte::grid::row_t bottom_row,
+                         int32_t z_min,
+                         int32_t z_max);
         void insert_image(ProcessingContext& context,
                           vte::Freeable<cairo_surface_t> image_surface) /* throws */;
         #endif

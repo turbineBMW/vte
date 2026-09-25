@@ -287,5 +287,43 @@ DrawingCairo::draw_surface_with_color_mask(cairo_surface_t *surface,
         end_cairo(cr);
 }
 
+void
+DrawingCairo::draw_image(cairo_surface_t* surface,
+                         int src_x,
+                         int src_y,
+                         int src_width,
+                         int src_height,
+                         double dst_x,
+                         double dst_y,
+                         double dst_width,
+                         double dst_height,
+                         int clip_x,
+                         int clip_y,
+                         int clip_width,
+                         int clip_height) const
+{
+        if (!surface ||
+            src_width <= 0 || src_height <= 0 ||
+            dst_width <= 0 || dst_height <= 0)
+                return;
+
+        auto cr = begin_cairo(clip_x, clip_y, clip_width, clip_height);
+
+        cairo_save(cr);
+        cairo_rectangle(cr, clip_x, clip_y, clip_width, clip_height);
+        cairo_clip(cr);
+        cairo_rectangle(cr, dst_x, dst_y, dst_width, dst_height);
+        cairo_clip(cr);
+
+        cairo_translate(cr, dst_x, dst_y);
+        cairo_scale(cr, dst_width / double(src_width), dst_height / double(src_height));
+        cairo_set_source_surface(cr, surface, -src_x, -src_y);
+        cairo_set_operator(cr, CAIRO_OPERATOR_OVER);
+        cairo_paint(cr);
+        cairo_restore(cr);
+
+        end_cairo(cr);
+}
+
 } // namespace view
 } // namespace vte

@@ -364,6 +364,7 @@ enum State {
         DCS_INT,          /* intermediate DCS characters */
         DCS_PASS,         /* DCS data passthrough */
         OSC_STRING,       /* parsing OSC sequence */
+        APC_STRING,       /* parsing APC sequence */
         ST_IGNORE,        /* unimplemented seq; ignore until ST */
         SCI,              /* single character introducer sequence was started */
 };
@@ -414,9 +415,10 @@ public:
                         return VTE_TRANSITION(raw, GROUND, action_execute);
                 case 0x98:                /* SOS */
                 case 0x9e:                /* PM */
-                case 0x9f:                /* APC */
                         return VTE_TRANSITION(raw, ST_IGNORE, action_st_ignore_start);
                         // FIXMEchpe shouldn't this use action_clear?
+                case 0x9f:                /* APC */
+                        return VTE_TRANSITION(raw, APC_STRING, action_apc_start);
                 case 0x90:                /* DCS */
                         return VTE_TRANSITION(raw, DCS_ENTRY, action_dcs_start);
                 case 0x9a:                /* SCI */
@@ -521,6 +523,9 @@ protected:
                                 case 0x5d: // ESC ]
                                 case 0x9d: // OSC
                                         return VTE_TRANSITION(raw, GROUND, action_osc_dispatch);
+                                case 0x5f: // ESC _
+                                case 0x9f: // APC
+                                        return VTE_TRANSITION(raw, GROUND, action_apc_dispatch);
                                 case 0: // ignore
                                         return VTE_TRANSITION(raw, GROUND, action_ignore);
                                 }
@@ -557,8 +562,9 @@ protected:
                                 return VTE_TRANSITION(raw, OSC_STRING, action_osc_start);
                         case 0x58:                /* 'X' */
                         case 0x5e:                /* '^' */
-                        case 0x5f:                /* '_' */
                                 return VTE_TRANSITION(raw, ST_IGNORE, action_st_ignore_start);
+                        case 0x5f:                /* '_' */
+                                return VTE_TRANSITION(raw, APC_STRING, action_apc_start);
                         case 0x9c:                /* ST */
                                 return VTE_TRANSITION(raw, GROUND, action_execute);
                         }
@@ -756,6 +762,20 @@ protected:
                         }
 
                         return action_osc_collect(raw);
+                case APC_STRING:
+                        switch (raw) {
+                        case 0x00 ... 0x1a:        /* C0 \ { ESC } */
+                        case 0x1c ... 0x1f:
+                                return action_nop(raw);
+                        case 0x1b:                /* ESC */
+                                return VTE_TRANSITION_NO_ACTION(raw, ST_ESC);
+                        case 0x20 ... 0x7f:        /* [' ' - DEL] */
+                                return action_apc_collect(raw);
+                        case 0x9c:                /* ST */
+                                return VTE_TRANSITION(raw, GROUND, action_apc_dispatch);
+                        }
+
+                        return action_apc_collect(raw);
                 case ST_IGNORE:
                         switch (raw) {
                         case 0x00 ... 0x1a:        /* ASCII \ { ESC } */
@@ -1114,6 +1134,45 @@ protected:
         }
 
         inline int action_osc_start(uint32_t raw) noexcept
+        {
+                action_clear(raw);
+
+                vte_seq_string_reset(&m_seq.arg_str);
+
+                m_seq.introducer = raw;
+
+                return VTE_SEQ_NONE;
+        }
+
+        inline int action_apc_collect(uint32_t raw) noexcept
+        {
+                /* Like OSC: our state-machine already filtered out C0 controls */
+                if (!vte_seq_string_push(&m_seq.arg_str, raw)) [[unlikely]]
+                        return VTE_TRANSITION(raw, ST_IGNORE, action_st_ignore_start);
+
+                return VTE_SEQ_NONE;
+        }
+
+        inline int action_apc_dispatch(uint32_t raw) noexcept
+        {
+                /* m_seq is cleared during APC-START state, thus there's no need
+                 * to clear invalid fields here. */
+                vte_seq_string_finish(&m_seq.arg_str);
+
+                /* We only dispatch an APC if the introducer and string
+                 * terminator are from the same control set, i.e. both
+                 * C0 or both C1; we discard sequences with mixed controls.
+                 */
+                if (!check_matching_controls(m_seq.introducer, raw))
+                        return VTE_SEQ_IGNORE;
+
+                m_seq.type = VTE_SEQ_APC;
+                m_seq.command = VTE_CMD_APC;
+                m_seq.st = raw;
+                return VTE_SEQ_APC;
+        }
+
+        inline int action_apc_start(uint32_t raw) noexcept
         {
                 action_clear(raw);
 

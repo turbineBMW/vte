@@ -283,6 +283,60 @@ DrawingGsk::draw_surface_with_color_mask(GdkTexture *texture,
 }
 
 void
+DrawingGsk::draw_image(GdkTexture* texture,
+                       int src_x,
+                       int src_y,
+                       int src_width,
+                       int src_height,
+                       double dst_x,
+                       double dst_y,
+                       double dst_width,
+                       double dst_height,
+                       int clip_x,
+                       int clip_y,
+                       int clip_width,
+                       int clip_height) const
+{
+        g_assert(m_snapshot);
+
+        if (!texture ||
+            src_width <= 0 || src_height <= 0 ||
+            dst_width <= 0 || dst_height <= 0)
+                return;
+
+        auto const tex_width = gdk_texture_get_width(texture);
+        auto const tex_height = gdk_texture_get_height(texture);
+        if (tex_width <= 0 || tex_height <= 0)
+                return;
+
+        auto const scale_x = dst_width / double(src_width);
+        auto const scale_y = dst_height / double(src_height);
+
+        auto const clip = GRAPHENE_RECT_INIT(float(clip_x), float(clip_y),
+                                             float(clip_width), float(clip_height));
+        auto const dst = GRAPHENE_RECT_INIT(float(dst_x), float(dst_y),
+                                            float(dst_width), float(dst_height));
+        auto clipped = graphene_rect_t{};
+        if (!graphene_rect_intersection(&clip, &dst, &clipped))
+                return;
+
+        /* Position the whole texture so that the source rectangle lands
+         * on the destination rectangle; the clip removes the rest. */
+        auto const bounds = GRAPHENE_RECT_INIT(float(dst_x - src_x * scale_x),
+                                               float(dst_y - src_y * scale_y),
+                                               float(tex_width * scale_x),
+                                               float(tex_height * scale_y));
+
+        auto const filter = (scale_x < 1.0 || scale_y < 1.0)
+                ? GSK_SCALING_FILTER_TRILINEAR
+                : GSK_SCALING_FILTER_LINEAR;
+
+        gtk_snapshot_push_clip(m_snapshot, &clipped);
+        gtk_snapshot_append_scaled_texture(m_snapshot, texture, filter, &bounds);
+        gtk_snapshot_pop(m_snapshot);
+}
+
+void
 DrawingGsk::begin_background(Rectangle const& rect,
                              size_t columns,
                              size_t rows)

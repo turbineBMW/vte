@@ -29,9 +29,10 @@
 
 #include "cxx-utils.hh"
 
-/* We should be able to hold a single fullscreen 4K image at most.
- * 35MiB equals 3840 * 2160 * 4 plus a little extra. */
-#define IMAGE_FAST_MEMORY_USED_MAX (35 * 1024 * 1024)
+/* Memory budget for images whose data is owned by the ring (SIXEL and
+ * iTerm2 images; kitty images are accounted in the kitty image store).
+ * 128MiB is a few fullscreen 4K images (3840 * 2160 * 4 = ~32MiB each). */
+#define IMAGE_FAST_MEMORY_USED_MAX (128 * 1024 * 1024)
 
 /* Hard limit on number of images to keep around. This limits the impact
  * of potential issues related to algorithmic complexity. */
@@ -216,8 +217,15 @@ Ring::image_gc_region() noexcept
              rit != m_image_map.rend();
              ) {
                 auto const& image = rit->second;
-                auto const rect = cairo_rectangle_int_t{image->get_left(),
-                                                        image->get_top(),
+
+                /* Kitty placements are only removed by explicit commands */
+                if (image->kind() == vte::image::Kind::KITTY) {
+                        ++rit;
+                        continue;
+                }
+
+                auto const rect = cairo_rectangle_int_t{int(image->get_left()),
+                                                        int(image->get_top()),
                                                         image->get_width(),
                                                         image->get_height()};
 
@@ -238,6 +246,28 @@ Ring::image_gc_region() noexcept
         }
 
         cairo_region_destroy(region);
+}
+
+void
+Ring::image_prune_scrolled_out() noexcept
+{
+        /* Drop images that are entirely above the start of the ring, i.e.
+         * which have scrolled out of the scrollback. */
+        remove_images_if([this](auto const& image) noexcept {
+                return image.get_bottom() < m_start;
+        });
+}
+
+void
+Ring::remove_image(vte::image::Image const* image) noexcept
+{
+        auto const it = m_image_map.find(image->get_priority());
+        if (it == m_image_map.end() || it->second.get() != image)
+                return;
+
+        m_image_fast_memory_used -= image->resource_size();
+        unlink_image_from_top_map(image);
+        m_image_map.erase(it);
 }
 
 void
@@ -911,6 +941,9 @@ void
 Ring::discard_one_row()
 {
 	m_start++;
+#if WITH_SIXEL
+        image_maybe_prune_scrolled_out();
+#endif
 	if (G_UNLIKELY(m_start == m_writable)) {
 		reset_streams(m_writable);
 	} else if (m_start < m_writable) {
@@ -1006,6 +1039,9 @@ Ring::resize(row_t max_rows)
 			reset_streams(m_writable);
 			m_writable = m_start;
 		}
+#if WITH_SIXEL
+                image_prune_scrolled_out();
+#endif
 	}
 
 	m_max = max_rows;
@@ -1145,6 +1181,9 @@ Ring::drop_scrollback(row_t position)
 
         m_start = m_writable = position;
         reset_streams(position);
+#if WITH_SIXEL
+        image_prune_scrolled_out();
+#endif
 }
 
 /**
@@ -1598,6 +1637,9 @@ Ring::rewrap(column_t columns,
 	if (m_end > m_max)
 		m_start = m_end - m_max;
 	m_cached_row_num = (row_t) -1;
+#if WITH_SIXEL
+        image_prune_scrolled_out();
+#endif
 
 	/* Find the markers. This requires that the ring is already updated. */
 	for (i = 0; i < num_markers; i++) {
@@ -1739,51 +1781,38 @@ Ring::write_contents(GOutputStream* stream,
 
 /**
  * Ring::append_image:
- * @surface: A Cairo surface object
- * @pixelwidth: vte::image::Image width in pixels
- * @pixelheight: vte::image::Image height in pixels
- * @left: Left position of image in cell units
- * @top: Top position of image in cell units
- * @cell_width: Width of image in cell units
- * @cell_height: Height of image in cell units
+ * @image: the image to append
  *
- * Append an image to the internal image list.
+ * Append an image to the internal image list, taking ownership of it.
+ *
+ * Returns: the image, or %nullptr if it could not be added
  */
-void
-Ring::append_image(vte::Freeable<cairo_surface_t> surface,
-                   int pixelwidth,
-                   int pixelheight,
-                   long left,
-                   long top,
-                   long cell_width,
-                   long cell_height) /* throws */
+vte::image::Image*
+Ring::append_image(std::unique_ptr<vte::image::Image> image) /* throws */
 {
         auto const priority = m_next_image_priority;
-        auto [it, success] = m_image_map.try_emplace
-                (priority, // key
-                 std::make_unique<vte::image::Image>(std::move(surface),
-                                                     priority,
-                                                     pixelwidth,
-                                                     pixelheight,
-                                                     left,
-                                                     top,
-                                                     cell_width,
-                                                     cell_height));
+        image->set_priority(priority);
+
+        auto [it, success] = m_image_map.try_emplace(priority, std::move(image));
         if (!success)
-                return;
+                return nullptr;
 
         ++m_next_image_priority;
 
-        auto const& image = it->second;
+        auto const& inserted = it->second;
 
         m_image_by_top_map.emplace(std::piecewise_construct,
-                                   std::forward_as_tuple(image->get_top()),
-                                   std::forward_as_tuple(image.get()));
+                                   std::forward_as_tuple(inserted->get_top()),
+                                   std::forward_as_tuple(inserted.get()));
 
-        m_image_fast_memory_used += image->resource_size ();
+        m_image_fast_memory_used += inserted->resource_size();
 
         image_gc_region();
         image_gc();
+
+        /* image_gc may have removed the image we just inserted */
+        auto const rit = m_image_map.find(priority);
+        return rit != m_image_map.end() ? rit->second.get() : nullptr;
 }
 
 #endif /* WITH_SIXEL */

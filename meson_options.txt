@@ -110,8 +110,8 @@ option(
 option(
   'sixel',
   type: 'boolean',
-  value: false,
-  description: 'Enable SIXEL support',
+  value: true,
+  description: 'Enable inline image support (SIXEL, kitty graphics, iTerm2)',
 )
 
 option(

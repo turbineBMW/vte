@@ -265,6 +265,8 @@ sequences = [
                 comment='identify revised registration'),
     seq_COMMAND('OSC',
                 comment='operating system command'),
+    seq_COMMAND('APC',
+                comment='application program command'),
 
     # Control characters
     seq_CONTROL('NUL', 0x00, flags=Flags.NOP, source=Source.ECMA16,

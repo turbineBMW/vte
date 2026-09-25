@@ -7768,6 +7768,39 @@ Terminal::NUL(vte::parser::Sequence const& seq)
 }
 
 void
+Terminal::APC(vte::parser::Sequence const& seq)
+try
+{
+        /*
+         * APC - application program command
+         *
+         * Currently only used for the kitty graphics protocol, whose
+         * commands start with 'G'.
+         *
+         * References: ECMA-48 § 8.3.2
+         *             https://sw.kovidgoyal.net/kitty/graphics-protocol/
+         */
+
+        auto const str = seq.string();
+        if (str.empty())
+                return;
+
+        switch (str[0]) {
+        case 'G':
+#if WITH_SIXEL
+                kitty_graphics_command(seq, str.substr(1));
+#endif
+                break;
+        default:
+                break;
+        }
+}
+catch (...)
+{
+        vte::log_exception();
+}
+
+void
 Terminal::OSC(vte::parser::Sequence const& seq)
 try
 {
@@ -10588,3 +10621,12 @@ Terminal::XTERM_WM(vte::parser::Sequence const& seq)
 
 } // namespace terminal
 } // namespace vte
+
+#if WITH_SIXEL
+void
+vte::terminal::Terminal::kitty_graphics_command(vte::parser::Sequence const& seq,
+                                                std::u32string_view str)
+{
+        // placeholder, implemented in a later step
+}
+#endif
