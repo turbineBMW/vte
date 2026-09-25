@@ -46,6 +46,13 @@ class TrackingStore;
 
 } // namespace property
 
+namespace kitty {
+
+class Command;
+class Store;
+
+} // namespace kitty
+
 namespace sixel {
 
 class Context;

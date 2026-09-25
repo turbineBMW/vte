@@ -612,6 +612,22 @@ void vte_terminal_set_enable_sixel(VteTerminal *terminal,
 _VTE_PUBLIC
 gboolean vte_terminal_get_enable_sixel(VteTerminal *terminal) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
 
+/* Set or get whether the kitty graphics protocol is enabled */
+_VTE_PUBLIC
+void vte_terminal_set_enable_kitty_graphics(VteTerminal *terminal,
+                                             gboolean enabled) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
+
+_VTE_PUBLIC
+gboolean vte_terminal_get_enable_kitty_graphics(VteTerminal *terminal) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
+
+/* Set or get whether iTerm2 inline images are enabled */
+_VTE_PUBLIC
+void vte_terminal_set_enable_iterm2_images(VteTerminal *terminal,
+                                            gboolean enabled) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
+
+_VTE_PUBLIC
+gboolean vte_terminal_get_enable_iterm2_images(VteTerminal *terminal) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
+
 _VTE_PUBLIC
 void vte_terminal_set_xalign(VteTerminal* terminal,
                              VteAlign align) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);

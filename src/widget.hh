@@ -617,6 +617,10 @@ public:
 
         bool set_sixel_enabled(bool enabled) noexcept { return m_terminal->set_sixel_enabled(enabled); }
         bool sixel_enabled() const noexcept { return m_terminal->sixel_enabled(); }
+        bool set_kitty_graphics_enabled(bool enabled) noexcept { return m_terminal->set_kitty_graphics_enabled(enabled); }
+        bool kitty_graphics_enabled() const noexcept { return m_terminal->kitty_graphics_enabled(); }
+        bool set_iterm2_images_enabled(bool enabled) noexcept { return m_terminal->set_iterm2_images_enabled(enabled); }
+        bool iterm2_images_enabled() const noexcept { return m_terminal->iterm2_images_enabled(); }
 
         constexpr auto xalign() const noexcept { return m_xalign; }
         constexpr auto yalign() const noexcept { return m_yalign; }

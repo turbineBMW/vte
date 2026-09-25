@@ -158,6 +158,8 @@ public:
         gboolean shaping{true};
         gboolean shell{true};
         gboolean sixel{true};
+        gboolean kitty_graphics{true};
+        gboolean iterm2_images{true};
         gboolean systemd_scope{true};
         gboolean test_mode{false};
         gboolean track_clipboard_targets{false};
@@ -802,6 +804,8 @@ private:
                 load_bool_option("Shaping", &shaping);
                 load_bool_option("Shell", &shell);
                 load_bool_option("Sixel", &sixel);
+                load_bool_option("KittyGraphics", &kitty_graphics);
+                load_bool_option("Iterm2Images", &iterm2_images);
                 load_bool_option("SystemdScope", &systemd_scope);
                 load_bool_option("TestMode", &test_mode);
                 load_bool_option("TrackClipboardTargets", &track_clipboard_targets);
@@ -1009,6 +1013,8 @@ private:
                 save_bool_option("Shaping" , shaping, defopt.shaping);
                 save_bool_option("Shell" , shell, defopt.shell);
                 save_bool_option("Sixel" , sixel, defopt.sixel);
+                save_bool_option("KittyGraphics" , kitty_graphics, defopt.kitty_graphics);
+                save_bool_option("Iterm2Images" , iterm2_images, defopt.iterm2_images);
                 save_bool_option("SystemdScope" , systemd_scope, defopt.systemd_scope);
                 save_bool_option("TestMode" , test_mode, defopt.test_mode);
                 save_bool_option("TrackClipboardTargets" , track_clipboard_targets, defopt.track_clipboard_targets);
@@ -1346,6 +1352,14 @@ public:
                                 0, &sixel,
                                 "Enable SIXEL images",
                                 "Disable SIXEL images");
+                add_bool_option("kitty-graphics", 0, "no-kitty-graphics", 0,
+                                0, &kitty_graphics,
+                                "Enable the kitty graphics protocol",
+                                "Disable the kitty graphics protocol");
+                add_bool_option("iterm2-images", 0, "no-iterm2-images", 0,
+                                0, &iterm2_images,
+                                "Enable iTerm2 inline images",
+                                "Disable iTerm2 inline images");
                 add_bool_option("systemd-scope", 0, "no-systemd-scope", 0,
                                 0, &systemd_scope,
                                 "Enable using systemd user scope",
@@ -4316,6 +4330,8 @@ vteapp_window_constructed(GObject *object)
         vte_terminal_set_enable_bidi(window->terminal, options.bidi);
         vte_terminal_set_enable_shaping(window->terminal, options.shaping);
         vte_terminal_set_enable_sixel(window->terminal, options.sixel);
+        vte_terminal_set_enable_kitty_graphics(window->terminal, options.kitty_graphics);
+        vte_terminal_set_enable_iterm2_images(window->terminal, options.iterm2_images);
         vte_terminal_set_enable_fallback_scrolling(window->terminal, options.fallback_scrolling);
         vte_terminal_set_enable_legacy_osc777(window->terminal, options.legacy_osc777);
         vte_terminal_set_mouse_autohide(window->terminal, true);

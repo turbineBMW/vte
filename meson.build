@@ -664,6 +664,7 @@ endforeach
 cairo_dep         = dependency('cairo', version: '>=' + cairo_req_version)
 cairo_gobject_dep = dependency('cairo-gobject', version: '>=' + cairo_gobject_req_version)
 gio_dep           = dependency('gio-2.0',    version: '>=' + gio_req_version)
+gdk_pixbuf_dep    = dependency('gdk-pixbuf-2.0')
 glib_dep          = dependency('glib-2.0',   version: '>=' + glib_req_version)
 gobject_dep       = dependency('gobject-2.0')
 pango_dep         = dependency('pango',      version: '>=' + pango_req_version)

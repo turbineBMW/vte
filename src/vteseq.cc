@@ -155,6 +155,10 @@ Terminal::clear_screen()
 {
         maybe_retreat_cursor();
 
+#if WITH_SIXEL
+        kitty_clear_screen();
+#endif
+
         auto row = get_xterm_cursor_row();
         auto initial = m_screen->row_data->next();
 	/* Add a new screen's worth of rows. */
@@ -268,6 +272,11 @@ Terminal::switch_screen(VteScreen *new_screen)
         auto cr = m_screen->cursor.row - m_screen->insert_delta;
         auto cc = m_screen->cursor.col;
         auto cadv = m_screen->cursor_advanced_by_graphic_character;
+#if WITH_SIXEL
+        /* Leaving the alternate screen clears its images, like its text */
+        if (m_screen == &m_alternate_screen && new_screen != m_screen)
+                kitty_clear_placements(&m_alternate_screen);
+#endif
         m_screen = new_screen;
         m_screen->cursor.row = cr + m_screen->insert_delta;
         m_screen->cursor.col = cc;
@@ -7860,6 +7869,13 @@ try
                 break;
 
         case -1: /* default */
+        case VTE_OSC_ITERM2_1337:
+#if WITH_SIXEL
+                if (it != cend)
+                        iterm2_command(it.string_view_remaining());
+#endif
+                break;
+
         case VTE_OSC_XTERM_SET_WINDOW_AND_ICON_TITLE:
         case VTE_OSC_XTERM_SET_WINDOW_TITLE: {
                 /* Only sets window title; icon title is not supported */
@@ -7975,7 +7991,6 @@ try
         case VTE_OSC_XTERM_RESET_COLOR_TEK_BG:
         case VTE_OSC_XTERM_RESET_COLOR_TEK_CURSOR:
         case VTE_OSC_EMACS_51:
-        case VTE_OSC_ITERM2_1337:
         case VTE_OSC_KONSOLE_30:
         case VTE_OSC_KONSOLE_31:
         case VTE_OSC_RLOGIN_SET_KANJI_MODE:
@@ -10621,12 +10636,3 @@ Terminal::XTERM_WM(vte::parser::Sequence const& seq)
 
 } // namespace terminal
 } // namespace vte
-
-#if WITH_SIXEL
-void
-vte::terminal::Terminal::kitty_graphics_command(vte::parser::Sequence const& seq,
-                                                std::u32string_view str)
-{
-        // placeholder, implemented in a later step
-}
-#endif

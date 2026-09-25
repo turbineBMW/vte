@@ -203,6 +203,10 @@ sixel_context_sources = files(
 sixel_sources = sixel_parser_sources + sixel_context_sources + files(
   'image.cc',
   'image.hh',
+  'kitty-graphics.cc',
+  'kitty-graphics.hh',
+  'vte-iterm2.cc',
+  'vte-kitty.cc',
 )
 
 std_glue_sources = files(
@@ -370,6 +374,7 @@ libvte_common_public_deps = [
 libvte_common_deps = libvte_common_public_deps + [
   cairo_gobject_dep,
   fast_float_dep,
+  gdk_pixbuf_dep,
   fmt_dep,
   fribidi_dep,
   gnutls_dep,
@@ -952,6 +957,35 @@ if get_option('sixel')
   )
 
   test_units += [test_sixel,]
+
+  test_kitty_sources = config_sources + debug_sources + glib_glue_sources + files(
+    'cairo-glue.hh',
+    'kitty-graphics.cc',
+    'kitty-graphics.hh',
+    'kitty-test.cc',
+    'libc-glue.hh',
+    'refptr.hh',
+    'vtedefines.hh',
+  )
+
+  test_kitty_deps = [
+    cairo_dep,
+    fmt_dep,
+    gdk_pixbuf_dep,
+    gio_dep,
+    glib_dep,
+    gobject_dep,
+  ]
+
+  test_kitty = executable(
+    'test-kitty',
+    sources: test_kitty_sources,
+    dependencies: test_kitty_deps,
+    include_directories: top_inc,
+    install: false,
+  )
+
+  test_units += [test_kitty,]
 endif
 
 test_stream_sources = config_sources + files(

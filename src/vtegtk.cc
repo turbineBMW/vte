@@ -1015,6 +1015,12 @@ try
                 case PROP_ENABLE_SIXEL:
                         g_value_set_boolean (value, vte_terminal_get_enable_sixel (terminal));
                         break;
+                case PROP_ENABLE_KITTY_GRAPHICS:
+                        g_value_set_boolean (value, vte_terminal_get_enable_kitty_graphics (terminal));
+                        break;
+                case PROP_ENABLE_ITERM2_IMAGES:
+                        g_value_set_boolean (value, vte_terminal_get_enable_iterm2_images (terminal));
+                        break;
                 case PROP_ENCODING:
                         g_value_set_string (value, vte_terminal_get_encoding (terminal));
                         break;
@@ -1177,6 +1183,12 @@ try
                         break;
                 case PROP_ENABLE_SIXEL:
                         vte_terminal_set_enable_sixel (terminal, g_value_get_boolean (value));
+                        break;
+                case PROP_ENABLE_KITTY_GRAPHICS:
+                        vte_terminal_set_enable_kitty_graphics (terminal, g_value_get_boolean (value));
+                        break;
+                case PROP_ENABLE_ITERM2_IMAGES:
+                        vte_terminal_set_enable_iterm2_images (terminal, g_value_get_boolean (value));
                         break;
                 case PROP_ENCODING:
                         vte_terminal_set_encoding (terminal, g_value_get_string (value), NULL);
@@ -2351,6 +2363,38 @@ vte_terminal_class_init(VteTerminalClass *klass)
                 g_param_spec_boolean ("enable-sixel", nullptr, nullptr,
 #if WITH_SIXEL
                                       VTE_SIXEL_ENABLED_DEFAULT,
+#else
+                                      false,
+#endif
+                                      (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY));
+
+        /**
+         * VteTerminal:enable-kitty-graphics:
+         *
+         * Controls whether the kitty terminal graphics protocol is enabled.
+         *
+         * Since: 0.84.1-images
+         */
+        pspecs[PROP_ENABLE_KITTY_GRAPHICS] =
+                g_param_spec_boolean ("enable-kitty-graphics", nullptr, nullptr,
+#if WITH_SIXEL
+                                      VTE_KITTY_GRAPHICS_ENABLED_DEFAULT,
+#else
+                                      false,
+#endif
+                                      (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY));
+
+        /**
+         * VteTerminal:enable-iterm2-images:
+         *
+         * Controls whether iTerm2 inline images (OSC 1337 File) are enabled.
+         *
+         * Since: 0.84.1-images
+         */
+        pspecs[PROP_ENABLE_ITERM2_IMAGES] =
+                g_param_spec_boolean ("enable-iterm2-images", nullptr, nullptr,
+#if WITH_SIXEL
+                                      VTE_ITERM2_IMAGES_ENABLED_DEFAULT,
 #else
                                       false,
 #endif
@@ -7458,6 +7502,111 @@ try
         g_return_val_if_fail(VTE_IS_TERMINAL(terminal), FALSE);
 
         return WIDGET(terminal)->sixel_enabled();
+#else
+        return false;
+#endif
+}
+catch (...)
+{
+        vte::log_exception();
+        return false;
+}
+
+/**
+ * vte_terminal_set_enable_kitty_graphics:
+ * @terminal: a #VteTerminal
+ * @enabled: whether to enable the kitty graphics protocol
+ *
+ * Set whether to enable the kitty terminal graphics protocol
+ * (APC G sequences).
+ *
+ * Since: 0.84.1-images
+ */
+void
+vte_terminal_set_enable_kitty_graphics(VteTerminal *terminal,
+                                       gboolean enabled) noexcept
+try
+{
+#if WITH_SIXEL
+        g_return_if_fail(VTE_IS_TERMINAL(terminal));
+
+        if (WIDGET(terminal)->set_kitty_graphics_enabled(enabled != FALSE))
+                g_object_notify_by_pspec(G_OBJECT(terminal), pspecs[PROP_ENABLE_KITTY_GRAPHICS]);
+#endif
+}
+catch (...)
+{
+        vte::log_exception();
+}
+
+/**
+ * vte_terminal_get_enable_kitty_graphics:
+ * @terminal: a #VteTerminal
+ *
+ * Returns: %TRUE if the kitty graphics protocol is enabled, %FALSE otherwise
+ *
+ * Since: 0.84.1-images
+ */
+gboolean
+vte_terminal_get_enable_kitty_graphics(VteTerminal *terminal) noexcept
+try
+{
+#if WITH_SIXEL
+        g_return_val_if_fail(VTE_IS_TERMINAL(terminal), FALSE);
+
+        return WIDGET(terminal)->kitty_graphics_enabled();
+#else
+        return false;
+#endif
+}
+catch (...)
+{
+        vte::log_exception();
+        return false;
+}
+
+/**
+ * vte_terminal_set_enable_iterm2_images:
+ * @terminal: a #VteTerminal
+ * @enabled: whether to enable iTerm2 inline images
+ *
+ * Set whether to enable iTerm2 inline images (OSC 1337 File).
+ *
+ * Since: 0.84.1-images
+ */
+void
+vte_terminal_set_enable_iterm2_images(VteTerminal *terminal,
+                                      gboolean enabled) noexcept
+try
+{
+#if WITH_SIXEL
+        g_return_if_fail(VTE_IS_TERMINAL(terminal));
+
+        if (WIDGET(terminal)->set_iterm2_images_enabled(enabled != FALSE))
+                g_object_notify_by_pspec(G_OBJECT(terminal), pspecs[PROP_ENABLE_ITERM2_IMAGES]);
+#endif
+}
+catch (...)
+{
+        vte::log_exception();
+}
+
+/**
+ * vte_terminal_get_enable_iterm2_images:
+ * @terminal: a #VteTerminal
+ *
+ * Returns: %TRUE if iTerm2 inline images are enabled, %FALSE otherwise
+ *
+ * Since: 0.84.1-images
+ */
+gboolean
+vte_terminal_get_enable_iterm2_images(VteTerminal *terminal) noexcept
+try
+{
+#if WITH_SIXEL
+        g_return_val_if_fail(VTE_IS_TERMINAL(terminal), FALSE);
+
+        return WIDGET(terminal)->iterm2_images_enabled();
 #else
         return false;
 #endif

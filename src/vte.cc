@@ -10947,6 +10947,11 @@ Terminal::reset(bool clear_tabstops,
         m_character_replacements[0] = VTE_CHARACTER_REPLACEMENT_NONE;
         m_character_replacements[1] = VTE_CHARACTER_REPLACEMENT_NONE;
         m_character_replacement = &m_character_replacements[0];
+#if WITH_SIXEL
+        /* Images are cleared on reset, whether or not history is kept */
+        kitty_reset();
+#endif
+
 	/* Clear the scrollback buffers and reset the cursors. Switch to normal screen. */
 	if (clear_history) {
                 m_screen = &m_normal_screen;

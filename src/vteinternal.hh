@@ -99,6 +99,7 @@ static_assert(CHAR_BIT == 8, "Weird");
 
 #if WITH_SIXEL
 #include "sixel-context.hh"
+#include "kitty-graphics.hh"
 #endif
 
 enum {
@@ -461,6 +462,23 @@ public:
 
 #if WITH_SIXEL
         std::unique_ptr<vte::sixel::Context> m_sixel_context{};
+        std::unique_ptr<vte::kitty::Store> m_kitty_store{};
+
+        /* iTerm2 multipart inline image in progress */
+        struct Iterm2Upload {
+                std::string args{};
+                std::string data{};
+                bool active{false};
+
+                void reset() noexcept
+                {
+                        args.clear();
+                        data.clear();
+                        data.shrink_to_fit();
+                        active = false;
+                }
+        };
+        Iterm2Upload m_iterm2_upload{};
 #endif
 
 	/* Screen data.  We support the normal screen, and an alternate
@@ -591,18 +609,48 @@ public:
 
         /* Inline images */
         bool m_sixel_enabled{VTE_SIXEL_ENABLED_DEFAULT};
-        bool m_images_enabled{VTE_SIXEL_ENABLED_DEFAULT};
+        bool m_kitty_enabled{VTE_KITTY_GRAPHICS_ENABLED_DEFAULT};
+        bool m_iterm2_enabled{VTE_ITERM2_IMAGES_ENABLED_DEFAULT};
+        bool m_images_enabled{VTE_SIXEL_ENABLED_DEFAULT ||
+                              VTE_KITTY_GRAPHICS_ENABLED_DEFAULT ||
+                              VTE_ITERM2_IMAGES_ENABLED_DEFAULT};
+
+        void update_images_enabled() noexcept
+        {
+                auto const enabled = m_sixel_enabled || m_kitty_enabled || m_iterm2_enabled;
+                if (enabled != m_images_enabled) {
+                        m_images_enabled = enabled;
+                        invalidate_all();
+                }
+        }
 
         bool set_sixel_enabled(bool enabled) noexcept
         {
                 auto const changed = m_sixel_enabled != enabled;
-                m_sixel_enabled = m_images_enabled = enabled;
-                if (changed)
-                        invalidate_all();
+                m_sixel_enabled = enabled;
+                update_images_enabled();
+                return changed;
+        }
+
+        bool set_kitty_graphics_enabled(bool enabled) noexcept
+        {
+                auto const changed = m_kitty_enabled != enabled;
+                m_kitty_enabled = enabled;
+                update_images_enabled();
+                return changed;
+        }
+
+        bool set_iterm2_images_enabled(bool enabled) noexcept
+        {
+                auto const changed = m_iterm2_enabled != enabled;
+                m_iterm2_enabled = enabled;
+                update_images_enabled();
                 return changed;
         }
 
         constexpr bool sixel_enabled() const noexcept { return m_sixel_enabled; }
+        constexpr bool kitty_graphics_enabled() const noexcept { return m_kitty_enabled; }
+        constexpr bool iterm2_images_enabled() const noexcept { return m_iterm2_enabled; }
 
 	/* State variables for handling match checks. */
         int m_match_regex_next_tag{0};
@@ -1016,8 +1064,52 @@ public:
                                        int len);
 
         #if WITH_SIXEL
+        vte::image::Image* place_inline_image(vte::image::Kind kind,
+                                              cairo_surface_t* surface,
+                                              int src_x,
+                                              int src_y,
+                                              int src_width,
+                                              int src_height,
+                                              int dst_width,
+                                              int dst_height,
+                                              int offset_x,
+                                              int offset_y,
+                                              int columns,
+                                              int rows,
+                                              uint32_t image_id,
+                                              uint32_t placement_id,
+                                              uint32_t image_number,
+                                              int32_t z,
+                                              bool owns_memory,
+                                              bool move_cursor);
+        void iterm2_command(std::string_view rest);
+        void iterm2_place_file(std::string_view args,
+                               std::string_view base64);
+        vte::kitty::Store& kitty_store();
         void kitty_graphics_command(vte::parser::Sequence const& seq,
                                     std::u32string_view str);
+        void kitty_reply(vte::parser::Sequence const& seq,
+                         vte::kitty::Command const& cmd,
+                         std::string_view message,
+                         uint32_t image_id = 0);
+        void kitty_transmit(vte::parser::Sequence const& seq,
+                            vte::kitty::Command const& cmd,
+                            std::string data);
+        void kitty_put(vte::parser::Sequence const& seq,
+                       vte::kitty::Command const& cmd);
+        void kitty_place(vte::parser::Sequence const& seq,
+                         vte::kitty::Command const& cmd,
+                         cairo_surface_t* surface,
+                         int image_width,
+                         int image_height,
+                         uint32_t image_id,
+                         uint32_t image_number);
+        void kitty_delete(vte::kitty::Command const& cmd);
+        bool kitty_image_has_placements(uint32_t image_id) const noexcept;
+        void kitty_delete_placements_for_image(uint32_t image_id);
+        void kitty_clear_screen();
+        void kitty_clear_placements(VteScreen* screen);
+        void kitty_reset();
         void draw_images(vte::grid::row_t top_row,
                          vte::grid::row_t bottom_row,
                          int32_t z_min,
