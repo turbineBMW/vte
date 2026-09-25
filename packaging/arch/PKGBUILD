@@ -1,0 +1,43 @@
+# Maintainer: turbineBMW
+# Builds the image-support fork of libvte as a drop-in replacement for the
+# Arch vte4 package. Install with: makepkg -si (from this directory).
+pkgname=vte4-images
+_pkgname=vte
+pkgver=0.84.1
+pkgrel=1
+pkgdesc="Virtual Terminal Emulator widget (GTK4) with SIXEL, kitty graphics and iTerm2 inline images"
+url="https://github.com/turbineBMW/vte"
+arch=(x86_64)
+license=(LGPL-3.0-or-later)
+depends=(cairo fribidi gdk-pixbuf2 glib2 glibc gnutls icu libgcc libstdc++ lz4 pango pcre2 systemd systemd-libs graphene gtk4 vte-common)
+makedepends=(git meson ninja glib2-devel gobject-introspection vala python)
+provides=(vte4=$pkgver libvte-2.91-gtk4.so)
+conflicts=(vte4)
+source=("git+$url.git#branch=image-support")
+sha256sums=('SKIP')
+
+pkgver() {
+  cd $_pkgname
+  printf '%s.r%s.g%s' "$(git describe --tags --abbrev=0 | sed 's/^v//')" \
+    "$(git rev-list --count HEAD)" "$(git rev-parse --short HEAD)"
+}
+
+build() {
+  arch-meson $_pkgname build \
+    -Dgtk3=false -Dgtk4=true -Dsixel=true -Ddocs=false -Dglade=false
+  meson compile -C build
+}
+
+check() {
+  meson test -C build --print-errorlogs
+}
+
+package() {
+  meson install -C build --destdir "$pkgdir"
+
+  # Owned by vte-common (the Arch vte4 split), which stays installed
+  rm -r "$pkgdir"/etc/profile.d
+  rm "$pkgdir"/usr/lib/vte-urlencode-cwd
+  rm -r "$pkgdir"/usr/lib/systemd/user/vte-spawn-.scope.d
+  rm -r "$pkgdir"/usr/share/locale
+}
