@@ -417,6 +417,72 @@ test_store()
         g_assert_cmpuint(store.images().size(), ==, 0);
 }
 
+static void
+test_placeholder_diacritics()
+{
+        using namespace vte::kitty;
+
+        g_assert_cmpint(placeholder_diacritic_value(0x0305), ==, 0);
+        g_assert_cmpint(placeholder_diacritic_value(0x030d), ==, 1);
+        g_assert_cmpint(placeholder_diacritic_value(0x1d244), ==, k_placeholder_diacritics - 1);
+        g_assert_cmpint(placeholder_diacritic_value(0x0300), ==, -1);
+        g_assert_cmpint(placeholder_diacritic_value('a'), ==, -1);
+        g_assert_cmpint(placeholder_diacritic_value(k_placeholder_char), ==, -1);
+}
+
+static void
+test_placeholder_decode()
+{
+        using namespace vte::kitty;
+
+        auto cell = PlaceholderCell{};
+
+        /* Explicit row and column, as Claude Code writes them */
+        char32_t const rc[] = {0x030d /* 1 */, 0x0310 /* 3 */};
+        g_assert_true(decode_placeholder(42, 0, rc, 2, nullptr, cell));
+        g_assert_cmpuint(cell.image_id(), ==, 42);
+        g_assert_cmpint(cell.row, ==, 1);
+        g_assert_cmpint(cell.column, ==, 3);
+
+        /* Third diacritic: most significant byte of the image id */
+        char32_t const rcm[] = {0x0305, 0x0305, 0x030e /* 2 */};
+        g_assert_true(decode_placeholder(0x123456, 7, rcm, 3, nullptr, cell));
+        g_assert_cmpuint(cell.image_id(), ==, 0x02123456u);
+        g_assert_cmpuint(cell.placement_id, ==, 7);
+
+        /* No diacritics: continues the cell to the left */
+        auto const first = cell;
+        auto next = PlaceholderCell{};
+        g_assert_true(decode_placeholder(0x123456, 7, nullptr, 0, &first, next));
+        g_assert_cmpint(next.row, ==, 0);
+        g_assert_cmpint(next.column, ==, 1);
+        g_assert_cmpuint(next.image_id(), ==, 0x02123456u);
+
+        /* Row only: column follows the left cell if the row matches */
+        char32_t const r0[] = {0x0305};
+        g_assert_true(decode_placeholder(0x123456, 7, r0, 1, &next, cell));
+        g_assert_cmpint(cell.column, ==, 2);
+        char32_t const r1[] = {0x030d};
+        g_assert_true(decode_placeholder(0x123456, 7, r1, 1, &next, cell));
+        g_assert_cmpint(cell.row, ==, 1);
+        g_assert_cmpint(cell.column, ==, 0);
+        g_assert_cmpuint(cell.image_id(), ==, 0x123456u);
+
+        /* A different image does not continue the run */
+        g_assert_true(decode_placeholder(9, 7, nullptr, 0, &first, cell));
+        g_assert_cmpint(cell.row, ==, 0);
+        g_assert_cmpint(cell.column, ==, 0);
+
+        /* Unknown diacritic, and image id 0, are not placeholders */
+        char32_t const bad[] = {0x0300};
+        g_assert_false(decode_placeholder(42, 0, bad, 1, nullptr, cell));
+        g_assert_false(decode_placeholder(0, 0, rc, 2, nullptr, cell));
+
+        /* High byte above 255 is invalid */
+        char32_t const big[] = {0x0305, 0x0305, 0x1d244};
+        g_assert_false(decode_placeholder(42, 0, big, 3, nullptr, cell));
+}
+
 int
 main(int argc,
      char* argv[])
@@ -434,6 +500,8 @@ main(int argc,
         g_test_add_func("/vte/kitty/decode/png", test_decode_png);
         g_test_add_func("/vte/kitty/load/file", test_load_file);
         g_test_add_func("/vte/kitty/store", test_store);
+        g_test_add_func("/vte/kitty/placeholder/diacritics", test_placeholder_diacritics);
+        g_test_add_func("/vte/kitty/placeholder/decode", test_placeholder_decode);
 
         return g_test_run();
 }

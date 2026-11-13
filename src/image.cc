@@ -69,6 +69,52 @@ Image::paint(vte::view::DrawingContext& draw,
                         offset_x, offset_y, clip_w, clip_h);
 }
 
+void
+Image::paint_cells(vte::view::DrawingContext& draw,
+                   int offset_x,
+                   int offset_y,
+                   int cell_width,
+                   int cell_height,
+                   int column,
+                   int row,
+                   int columns,
+                   int rows) const noexcept
+{
+        if (m_src_width <= 0 || m_src_height <= 0 ||
+            m_dst_width <= 0 || m_dst_height <= 0 ||
+            columns <= 0 || rows <= 0 ||
+            row < 0 || row >= m_height_cells ||
+            column < 0 || column >= m_width_cells)
+                return;
+
+        columns = std::min(columns, m_width_cells - column);
+        rows = std::min(rows, m_height_cells - row);
+
+        auto const scale_x = double(cell_width) / double(m_cell_width);
+        auto const scale_y = double(cell_height) / double(m_cell_height);
+
+        /* Where the placement's top-left cell would be */
+        auto const origin_x = offset_x - column * cell_width;
+        auto const origin_y = offset_y - row * cell_height;
+
+#if VTE_GTK == 3
+        auto const source = m_surface.get();
+#elif VTE_GTK == 4
+        auto const source = texture();
+#endif
+        if (!source)
+                return;
+
+        draw.draw_image(source,
+                        m_src_x, m_src_y, m_src_width, m_src_height,
+                        origin_x + m_offset_x * scale_x,
+                        origin_y + m_offset_y * scale_y,
+                        m_dst_width * scale_x,
+                        m_dst_height * scale_y,
+                        offset_x, offset_y,
+                        columns * cell_width, rows * cell_height);
+}
+
 #if VTE_GTK == 4
 
 GdkTexture*

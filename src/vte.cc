@@ -9691,7 +9691,12 @@ Terminal::draw_rows(VteScreen *screen_,
                              !nhyperlink &&
                              !nhilite) ||
                             cell->attr.fragment() ||
-                            cell->attr.invisible()) {
+                            cell->attr.invisible()
+#if WITH_SIXEL
+                            /* Kitty image placeholders show part of an image, not a glyph */
+                            || G_UNLIKELY(_vte_unistr_get_base(cell->c) == vte::kitty::k_placeholder_char)
+#endif
+                            ) {
                                 /* Skip empty or fragment cell, but erase on ' ' and '\t', since
                                  * it may be overwriting an image. */
                                 lcol++;
@@ -9847,8 +9852,10 @@ Terminal::draw_images(vte::grid::row_t top_row,
                 return;
 
         auto const& image_map = m_screen->row_data->image_map();
-        if (image_map.empty())
+        if (image_map.empty()) {
+                draw_kitty_placeholders(top_row, bottom_row, z_min, z_max);
                 return;
+        }
 
         auto images = std::vector<vte::image::Image const*>{};
         for (auto const& [priority, image] : image_map) {
@@ -9860,8 +9867,10 @@ Terminal::draw_images(vte::grid::row_t top_row,
                 images.push_back(image.get());
         }
 
-        if (images.empty())
+        if (images.empty()) {
+                draw_kitty_placeholders(top_row, bottom_row, z_min, z_max);
                 return;
+        }
 
         /* Lower z-index first; equal z-index in insertion order */
         std::stable_sort(images.begin(), images.end(),
@@ -9874,6 +9883,163 @@ Terminal::draw_images(vte::grid::row_t top_row,
                 auto const y = int(row_to_pixel(image->get_top()));
                 image->paint(m_draw, x, y, m_cell_width, m_cell_height);
         }
+
+        /* Placeholder cells of kitty virtual placements */
+        draw_kitty_placeholders(top_row, bottom_row, z_min, z_max);
+}
+
+/* The id a placeholder cell's colour encodes: a 256-colour index, or a
+ * 24-bit colour. Underline colours store 24-bit colours with reduced
+ * precision, so only their 256-colour form can carry a placement id. */
+static uint32_t
+placeholder_id_from_color(uint32_t color,
+                          bool underline) noexcept
+{
+        if (color < 256)
+                return color;
+        if (underline)
+                return 0;
+        if (color >= VTE_LEGACY_COLORS_OFFSET &&
+            color < VTE_LEGACY_COLORS_OFFSET + VTE_LEGACY_FULL_COLOR_SET_SIZE)
+                return color - VTE_LEGACY_COLORS_OFFSET;
+        if (color & VTE_RGB_COLOR_MASK(8, 8, 8))
+                return color & 0xffffffu;
+        return 0;
+}
+
+/* Paints the virtual placements, with a z-index within [z_min, z_max],
+ * that the placeholder cells in the given rows refer to. Runs of cells
+ * showing consecutive columns of one placement row are merged, and so are
+ * runs stacked on consecutive rows, so that a whole rectangle of
+ * placeholders is painted at once: painting it piecewise would leave
+ * seams where antialiased clip edges meet. */
+void
+Terminal::draw_kitty_placeholders(vte::grid::row_t top_row,
+                                  vte::grid::row_t bottom_row,
+                                  int32_t z_min,
+                                  int32_t z_max)
+{
+        if (m_kitty_virtual_placements.empty())
+                return;
+
+        auto marks_str = vte::take_freeable(g_string_new(nullptr));
+        auto* const gs = marks_str.get();
+
+        struct Rect {
+                vte::image::Image const* image;
+                vte::grid::column_t col;
+                vte::grid::row_t row;
+                int image_col;
+                int image_row;
+                int columns;
+                int rows;
+        };
+        auto rects = std::vector<Rect>{};
+
+        for (auto row = top_row; row <= bottom_row; ++row) {
+                auto const* row_data = find_row_data(row);
+                if (!row_data)
+                        continue;
+
+                /* The run being collected */
+                auto const* run_image = static_cast<vte::image::Image const*>(nullptr);
+                auto run_col = vte::grid::column_t{0};
+                auto run_image_row = 0;
+                auto run_image_col = 0;
+                auto run_length = 0;
+
+                auto flush = [&]() {
+                        if (run_image && run_length > 0) {
+                                /* Extend the run directly above, if this continues it */
+                                auto const it = std::find_if(rects.begin(), rects.end(), [&](auto const& r) {
+                                        return r.image == run_image &&
+                                                r.col == run_col &&
+                                                r.columns == run_length &&
+                                                r.image_col == run_image_col &&
+                                                r.row + r.rows == row &&
+                                                r.image_row + r.rows == run_image_row;
+                                });
+                                if (it != rects.end())
+                                        ++it->rows;
+                                else
+                                        rects.push_back({run_image, run_col, row,
+                                                         run_image_col, run_image_row,
+                                                         run_length, 1});
+                        }
+                        run_image = nullptr;
+                        run_length = 0;
+                };
+
+                auto previous = vte::kitty::PlaceholderCell{};
+                auto have_previous = false;
+
+                auto const len = std::min(vte::grid::column_t(row_data->len), m_column_count);
+                for (auto col = vte::grid::column_t{0}; col < len; ++col) {
+                        auto const* cell = _vte_row_data_get(row_data, col);
+                        if (!cell || cell->attr.fragment() ||
+                            _vte_unistr_get_base(cell->c) != vte::kitty::k_placeholder_char) {
+                                flush();
+                                have_previous = false;
+                                continue;
+                        }
+
+                        /* The combining characters after U+10EEEE */
+                        char32_t marks[3];
+                        auto n_marks = size_t{0};
+                        if (cell->c >= VTE_UNISTR_START) {
+                                g_string_truncate(gs, 0);
+                                _vte_unistr_append_to_string(cell->c, gs);
+                                auto const* p = g_utf8_next_char(gs->str);
+                                while (*p && n_marks < std::size(marks)) {
+                                        marks[n_marks++] = g_utf8_get_char(p);
+                                        p = g_utf8_next_char(p);
+                                }
+                        }
+
+                        auto decoded = vte::kitty::PlaceholderCell{};
+                        if (!vte::kitty::decode_placeholder(placeholder_id_from_color(cell->attr.fore(), false),
+                                                            placeholder_id_from_color(cell->attr.deco(), true),
+                                                            marks, n_marks,
+                                                            have_previous ? &previous : nullptr,
+                                                            decoded)) {
+                                flush();
+                                have_previous = false;
+                                continue;
+                        }
+                        previous = decoded;
+                        have_previous = true;
+
+                        auto const* image = kitty_find_virtual_placement(decoded.image_id(),
+                                                                         decoded.placement_id);
+                        if (!image || image->z() < z_min || image->z() > z_max) {
+                                flush();
+                                continue;
+                        }
+
+                        if (image == run_image &&
+                            decoded.row == run_image_row &&
+                            decoded.column == run_image_col + run_length &&
+                            col == run_col + run_length) {
+                                ++run_length;
+                                continue;
+                        }
+
+                        flush();
+                        run_image = image;
+                        run_col = col;
+                        run_image_row = decoded.row;
+                        run_image_col = decoded.column;
+                        run_length = 1;
+                }
+                flush();
+        }
+
+        for (auto const& r : rects)
+                r.image->paint_cells(m_draw,
+                                     int(r.col * m_cell_width), int(row_to_pixel(r.row)),
+                                     m_cell_width, m_cell_height,
+                                     r.image_col, r.image_row,
+                                     r.columns, r.rows);
 }
 
 #endif /* WITH_SIXEL */

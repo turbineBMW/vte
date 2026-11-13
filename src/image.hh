@@ -253,6 +253,20 @@ public:
                    int cell_width,
                    int cell_height) const noexcept;
 
+        /* Paints the columns x rows cells starting at (column, row) of the
+         * placement's cell grid with the first of them at (offset_x,
+         * offset_y) pixels. Used for Unicode placeholders, where each
+         * rectangle of placeholder cells shows a piece of the image. */
+        void paint_cells(vte::view::DrawingContext& draw,
+                         int offset_x,
+                         int offset_y,
+                         int cell_width,
+                         int cell_height,
+                         int column,
+                         int row,
+                         int columns,
+                         int rows) const noexcept;
+
 #if VTE_GTK == 4
         GdkTexture* texture() const noexcept;
 #endif
