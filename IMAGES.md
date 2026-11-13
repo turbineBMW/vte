@@ -13,11 +13,10 @@ Branch: `image-support`, based on the `0.84.1` tag.
 | Protocol | Status |
 |---|---|
 | SIXEL (DCS q) | Upstream's implementation, restored on the stable branch, now actually painted on GTK 4 and enabled by default. |
-| kitty graphics protocol (APC G) | Transmit / display / put / query / delete; formats 24, 32 and 100 (PNG); zlib compression; direct, file, temporary file and shared memory media; chunked uploads; image ids and image numbers; placement ids; source rectangles; `c`/`r` scaling with letterboxing; `X`/`Y` cell offsets; z-index layering (under cell backgrounds, between backgrounds and text, above text); cursor movement policy; all delete variants; responses with `q` suppression. |
+| kitty graphics protocol (APC G) | Transmit / display / put / query / delete; formats 24, 32 and 100 (PNG); zlib compression; direct, file, temporary file and shared memory media; chunked uploads; image ids and image numbers; placement ids; source rectangles; `c`/`r` scaling with letterboxing; `X`/`Y` cell offsets; z-index layering (under cell backgrounds, between backgrounds and text, above text); cursor movement policy; Unicode placeholders (virtual placements with `U=1`); all delete variants; responses with `q` suppression. |
 | iTerm2 inline images (OSC 1337 File) | `inline=1` images in any format gdk-pixbuf decodes; `width`/`height` in cells, `px`, `%` or `auto`; `preserveAspectRatio`; `doNotMoveCursor`; `MultipartFile`/`FilePart`/`FileEnd`. |
 
 Not implemented: kitty animations (`a=f`, `a=a`, `a=c` answer `ENOTSUP`),
-Unicode placeholders (`U=1` is acknowledged but nothing is drawn),
 relative placements (`P`/`Q`), and scrolling of images inside a DECSTBM
 scroll region (images stay put while the region scrolls, like SIXEL always
 did in VTE).
@@ -30,6 +29,18 @@ did in VTE).
   delete commands, `ESC[2J`, leaving the alternate screen and a terminal
   reset remove them. SIXEL and iTerm2 images are treated the way VTE
   always treated SIXEL: a later image that completely covers one erases it.
+- Unicode placeholders: a virtual placement (`a=p` or `a=T` with `U=1`,
+  which needs an image id) draws nothing by itself. Every U+10EEEE cell
+  shows a cell-sized piece of it: the foreground colour (256-colour index
+  or 24-bit) is the image id, the third diacritic its high byte, the
+  underline colour the placement id (256-colour index only; VTE keeps
+  24-bit underline colours at reduced precision, so those fall back to
+  the image's newest virtual placement), and the first two diacritics
+  the row and column, inferred from the cell to the left when missing.
+  The image is fitted into its `c` x `r` cells keeping its aspect ratio,
+  and centred. The U+10EEEE glyph itself is never drawn. Virtual
+  placements are only removed by id-based deletes (`d=i`/`n`/`r`), by
+  re-transmitting the image, and by a reset.
 - Kitty image data is kept in a 320 MiB per-terminal store; when it fills
   up, images without placements are evicted first, then the oldest ones.
 - Files read for the `t=f`/`t=t`/`t=s` media are validated as the protocol

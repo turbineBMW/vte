@@ -266,6 +266,50 @@ private:
         Upload m_upload{};
 };
 
+/* Unicode placeholders.
+ *
+ * A virtual placement (a=p or a=T with U=1) shows nothing by itself.
+ * Instead the client prints cells containing U+10EEEE: the foreground
+ * colour of a cell holds the low 24 bits of the image id, the underline
+ * colour the placement id, and up to three combining diacritics the row,
+ * the column, and the most significant byte of the image id. Each such
+ * cell shows the matching cell-sized piece of the image.
+ */
+inline constexpr char32_t k_placeholder_char = 0x10EEEE;
+
+/* Number of entries in the row/column diacritics table */
+inline constexpr int k_placeholder_diacritics = 297;
+
+/* The value encoded by @c in the row/column diacritics table, or -1 if @c
+ * is not in the table. */
+int placeholder_diacritic_value(char32_t c) noexcept;
+
+/* One decoded placeholder cell */
+struct PlaceholderCell {
+        uint32_t id_low{0};          // image id bits 0..23, from the foreground colour
+        uint32_t id_high{0};         // image id bits 24..31, from the third diacritic
+        uint32_t placement_id{0};    // from the underline colour; 0 if unset
+        int row{0};
+        int column{0};
+
+        uint32_t image_id() const noexcept { return id_low | (id_high << 24); }
+};
+
+/* Decodes a placeholder cell. @id_low and @placement_id come from the
+ * cell's colours (0 when unset), @marks are the combining characters that
+ * follow U+10EEEE. Missing diacritics are inferred from @previous, the
+ * decoded cell immediately to the left (or nullptr), as the protocol
+ * specifies: a cell continuing a run of the same image and placement (and,
+ * if given, row) takes the next column, the row and the high id byte of
+ * its predecessor. Returns false if the cell does not name an image.
+ */
+bool decode_placeholder(uint32_t id_low,
+                        uint32_t placement_id,
+                        char32_t const* marks,
+                        size_t n_marks,
+                        PlaceholderCell const* previous,
+                        PlaceholderCell& cell) noexcept;
+
 } // namespace kitty
 
 } // namespace vte

@@ -479,6 +479,17 @@ public:
                 }
         };
         Iterm2Upload m_iterm2_upload{};
+
+        /* Kitty virtual placements (U=1), shown through Unicode placeholder
+         * cells. Keyed by (image id, placement id). They belong to the
+         * terminal, not a screen or row: the placeholder text decides where
+         * (and whether) they appear. */
+        struct KittyVirtualPlacement {
+                std::unique_ptr<vte::image::Image> image{};
+                uint64_t sequence{0};
+        };
+        std::map<std::pair<uint32_t, uint32_t>, KittyVirtualPlacement> m_kitty_virtual_placements{};
+        uint64_t m_kitty_virtual_sequence{0};
 #endif
 
 	/* Screen data.  We support the normal screen, and an alternate
@@ -1110,6 +1121,24 @@ public:
         void kitty_clear_screen();
         void kitty_clear_placements(VteScreen* screen);
         void kitty_reset();
+        void kitty_place_virtual(vte::parser::Sequence const& seq,
+                                 vte::kitty::Command const& cmd,
+                                 cairo_surface_t* surface,
+                                 int src_x,
+                                 int src_y,
+                                 int src_width,
+                                 int src_height,
+                                 int columns,
+                                 int rows,
+                                 uint32_t image_id,
+                                 uint32_t image_number);
+        size_t kitty_remove_virtual_placements_if(std::function<bool(vte::image::Image const&)> const& pred);
+        vte::image::Image const* kitty_find_virtual_placement(uint32_t image_id,
+                                                              uint32_t placement_id) const noexcept;
+        void draw_kitty_placeholders(vte::grid::row_t top_row,
+                                     vte::grid::row_t bottom_row,
+                                     int32_t z_min,
+                                     int32_t z_max);
         void draw_images(vte::grid::row_t top_row,
                          vte::grid::row_t bottom_row,
                          int32_t z_min,

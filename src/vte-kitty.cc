@@ -70,8 +70,47 @@ Terminal::kitty_reply(vte::parser::Sequence const& seq,
 bool
 Terminal::kitty_image_has_placements(uint32_t image_id) const noexcept
 {
+        auto const it = m_kitty_virtual_placements.lower_bound({image_id, 0});
+        if (it != m_kitty_virtual_placements.end() && it->first.first == image_id)
+                return true;
+
         return m_normal_screen.row_data->has_image_with_id(image_id) ||
                 m_alternate_screen.row_data->has_image_with_id(image_id);
+}
+
+/* Removes the virtual placements matching @pred. Returns how many. */
+size_t
+Terminal::kitty_remove_virtual_placements_if(std::function<bool(vte::image::Image const&)> const& pred)
+{
+        auto const removed = std::erase_if(m_kitty_virtual_placements, [&](auto const& item) {
+                return pred(*item.second.image);
+        });
+        if (removed)
+                invalidate_all();
+        return removed;
+}
+
+/* The virtual placement placeholder cells for (@image_id, @placement_id)
+ * show. Without a placement id, or if there is no such placement, that is
+ * the image's most recently created virtual placement. */
+vte::image::Image const*
+Terminal::kitty_find_virtual_placement(uint32_t image_id,
+                                       uint32_t placement_id) const noexcept
+{
+        if (placement_id != 0) {
+                auto const it = m_kitty_virtual_placements.find({image_id, placement_id});
+                if (it != m_kitty_virtual_placements.end())
+                        return it->second.image.get();
+        }
+
+        auto const* latest = static_cast<KittyVirtualPlacement const*>(nullptr);
+        for (auto it = m_kitty_virtual_placements.lower_bound({image_id, 0});
+             it != m_kitty_virtual_placements.end() && it->first.first == image_id;
+             ++it) {
+                if (!latest || it->second.sequence > latest->sequence)
+                        latest = &it->second;
+        }
+        return latest ? latest->image.get() : nullptr;
 }
 
 void
@@ -86,6 +125,10 @@ Terminal::kitty_delete_placements_for_image(uint32_t image_id)
         }
         if (removed)
                 invalidate_all();
+
+        kitty_remove_virtual_placements_if([image_id](auto const& image) noexcept {
+                return image.image_id() == image_id;
+        });
 }
 
 /* Called from clear_screen(): "The clear screen escape code should also
@@ -122,6 +165,10 @@ Terminal::kitty_reset()
 {
         kitty_clear_placements(&m_normal_screen);
         kitty_clear_placements(&m_alternate_screen);
+        if (!m_kitty_virtual_placements.empty()) {
+                m_kitty_virtual_placements.clear();
+                invalidate_all();
+        }
         if (m_kitty_store)
                 m_kitty_store->clear();
 }
@@ -403,10 +450,11 @@ Terminal::kitty_place(vte::parser::Sequence const& seq,
         columns = std::clamp(columns, 1, int(max_cells));
         rows = std::clamp(rows, 1, int(max_cells));
 
-        /* Virtual placements (Unicode placeholders) are accepted but not
-         * rendered by this implementation. */
         if (cmd.unicode_placeholder) {
-                kitty_reply(seq, cmd, "OK", image_id);
+                kitty_place_virtual(seq, cmd, surface,
+                                    src_x, src_y, src_width, src_height,
+                                    columns, rows,
+                                    image_id, image_number);
                 return;
         }
 
@@ -420,6 +468,61 @@ Terminal::kitty_place(vte::parser::Sequence const& seq,
                            cmd.z,
                            false /* data is owned by the store */,
                            cmd.cursor_policy == 0);
+
+        kitty_reply(seq, cmd, "OK", image_id);
+}
+
+/* Creates a virtual placement, shown wherever placeholder cells refer to
+ * it. The image is fitted into @columns x @rows cells, keeping its aspect
+ * ratio, and centred. The cursor does not move. */
+void
+Terminal::kitty_place_virtual(vte::parser::Sequence const& seq,
+                              vte::kitty::Command const& cmd,
+                              cairo_surface_t* surface,
+                              int src_x,
+                              int src_y,
+                              int src_width,
+                              int src_height,
+                              int columns,
+                              int rows,
+                              uint32_t image_id,
+                              uint32_t image_number)
+{
+        /* Placeholder cells can only refer to an image by its id */
+        if (image_id == 0) {
+                kitty_reply(seq, cmd, "EINVAL:Virtual placement needs an image id", image_id);
+                return;
+        }
+
+        auto const cell_width = int(m_cell_width_unscaled);
+        auto const cell_height = int(m_cell_height_unscaled);
+        auto const box_width = double(columns) * cell_width;
+        auto const box_height = double(rows) * cell_height;
+        auto const scale = std::min(box_width / src_width, box_height / src_height);
+        auto const dst_width = std::max(1, int(std::lround(src_width * scale)));
+        auto const dst_height = std::max(1, int(std::lround(src_height * scale)));
+        auto const offset_x = int(std::lround((box_width - dst_width) / 2));
+        auto const offset_y = int(std::lround((box_height - dst_height) / 2));
+
+        auto image = std::make_unique<vte::image::Image>(vte::image::Kind::KITTY,
+                                                         vte::take_freeable(cairo_surface_reference(surface)),
+                                                         src_x, src_y, src_width, src_height,
+                                                         dst_width, dst_height,
+                                                         offset_x, offset_y,
+                                                         0, 0,
+                                                         columns, rows,
+                                                         cell_width, cell_height);
+        image->set_ids(image_id, cmd.placement_id, image_number);
+        image->set_z(cmd.z);
+        image->set_owns_memory(false);
+
+        /* Same image and placement id replaces the old one */
+        auto& slot = m_kitty_virtual_placements[{image_id, cmd.placement_id}];
+        slot.image = std::move(image);
+        slot.sequence = ++m_kitty_virtual_sequence;
+
+        /* Placeholder cells may already be on screen */
+        invalidate_all();
 
         kitty_reply(seq, cmd, "OK", image_id);
 }
@@ -536,6 +639,24 @@ Terminal::kitty_delete(vte::kitty::Command const& cmd)
                         affected.push_back(image.image_id());
                 return true;
         });
+
+        /* Virtual placements have no position on screen, so like kitty
+         * only the id-based deletes remove them. */
+        switch (which) {
+        case 'i':
+        case 'n':
+        case 'r':
+                kitty_remove_virtual_placements_if([&](auto const& image) {
+                        if (!pred(image))
+                                return false;
+                        if (free_data)
+                                affected.push_back(image.image_id());
+                        return true;
+                });
+                break;
+        default:
+                break;
+        }
 
         if (free_data) {
                 /* Id-based deletes also free images that had no placements */
