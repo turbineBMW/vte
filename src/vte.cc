@@ -18,6 +18,9 @@
 
 #include "config.h"
 
+#include <algorithm>
+#include <cmath>
+
 #include <math.h>
 #include <search.h>
 #include <stdlib.h>
@@ -8700,6 +8703,8 @@ Terminal::widget_unmap()
 void
 Terminal::widget_unrealize()
 {
+        cursor_animation_reset();
+
 	/* Deallocate the cursors. */
         m_mouse_cursor_over_widget = FALSE;
 
@@ -10044,6 +10049,248 @@ Terminal::draw_kitty_placeholders(vte::grid::row_t top_row,
 
 #endif /* WITH_SIXEL */
 
+bool
+Terminal::set_cursor_smooth(bool enabled) noexcept
+{
+        if (enabled == m_cursor_smooth)
+                return false;
+
+        m_cursor_smooth = enabled;
+        cursor_animation_reset();
+        invalidate_cursor_once();
+        return true;
+}
+
+bool
+Terminal::set_cursor_trail(bool enabled) noexcept
+{
+        if (enabled == m_cursor_trail)
+                return false;
+
+        m_cursor_trail = enabled;
+        cursor_animation_reset();
+        invalidate_cursor_once();
+        return true;
+}
+
+bool
+Terminal::set_cursor_animation_duration(int ms) noexcept
+{
+        ms = std::clamp(ms, 0, VTE_CURSOR_ANIMATION_DURATION_MAX);
+        if (ms == m_cursor_animation_duration_ms)
+                return false;
+
+        m_cursor_animation_duration_ms = ms;
+        return true;
+}
+
+bool
+Terminal::cursor_animation_enabled() const noexcept
+{
+        if (!m_cursor_smooth && !m_cursor_trail)
+                return false;
+        if (m_cursor_animation_duration_ms <= 0 || !m_widget)
+                return false;
+
+        /* Honour the desktop's request to turn animations off. */
+        auto enable = gboolean{TRUE};
+        g_object_get(gtk_widget_get_settings(m_widget),
+                     "gtk-enable-animations", &enable,
+                     nullptr);
+        return enable;
+}
+
+void
+Terminal::cursor_animation_stop_ticking() noexcept
+{
+        if (m_cursor_animation_tick_id == 0)
+                return;
+
+        if (m_widget)
+                gtk_widget_remove_tick_callback(m_widget, m_cursor_animation_tick_id);
+        m_cursor_animation_tick_id = 0;
+}
+
+void
+Terminal::cursor_animation_reset() noexcept
+{
+        m_cursor_animation.valid = false;
+        m_cursor_animation.active = false;
+        cursor_animation_stop_ticking();
+}
+
+/* Where the cursor's corners are at @now_us, eased out of their start.
+ * Sets @done once every corner has arrived. */
+void
+Terminal::cursor_animation_corners(int64_t now_us,
+                                   double* xy,
+                                   bool* done) const noexcept
+{
+        auto const& a = m_cursor_animation;
+        auto arrived = true;
+        for (auto i = 0; i < 4; ++i) {
+                auto t = a.duration_us[i] > 0 ? double(now_us - a.start_us) / a.duration_us[i] : 1.0;
+                if (t < 1.0)
+                        arrived = false;
+                t = std::clamp(t, 0.0, 1.0);
+                auto const u = 1.0 - t;
+                auto const eased = 1.0 - u * u * u; /* ease-out cubic */
+                for (auto k = 2 * i; k < 2 * i + 2; ++k)
+                        xy[k] = a.from[k] + (a.to[k] - a.from[k]) * eased;
+        }
+        *done = arrived;
+}
+
+gboolean
+Terminal::cursor_animation_tick_cb(GtkWidget* widget,
+                                   GdkFrameClock* clock,
+                                   gpointer data) noexcept
+{
+        auto const that = reinterpret_cast<Terminal*>(data);
+
+        /* One more frame either way: a moving cursor needs its next
+         * position, an arrived one needs the real cursor painted. */
+        gtk_widget_queue_draw(widget);
+
+        if (!that->m_cursor_animation.active) {
+                that->m_cursor_animation_tick_id = 0;
+                return G_SOURCE_REMOVE;
+        }
+        return G_SOURCE_CONTINUE;
+}
+
+/* Track the focused cursor's filled area (@x, @y, @width, @height) and, while
+ * it is travelling to a new position, paint it in @color where it is now.
+ * Returns whether the real cursor should be painted on top. */
+bool
+Terminal::cursor_animation_paint(int x,
+                                 int y,
+                                 int width,
+                                 int height,
+                                 vte::color::rgb const& color) noexcept
+{
+        auto& a = m_cursor_animation;
+
+        if (!cursor_animation_enabled()) {
+                cursor_animation_reset();
+                return true;
+        }
+
+        double const to[8] = {double(x),         double(y),
+                              double(x + width), double(y),
+                              double(x + width), double(y + height),
+                              double(x),         double(y + height)};
+        auto const now_us = g_get_monotonic_time();
+
+        /* Snap rather than animate when what lies under the cursor moved:
+         * another screen, the view scrolled, output scrolled the text, or
+         * the font changed. Only a cursor moving over still text travels. */
+        auto const same_context = a.valid &&
+                a.screen == m_screen &&
+                std::abs(a.scroll_delta - m_screen->scroll_delta) < 1e-6 &&
+                a.insert_delta == m_screen->insert_delta &&
+                a.cell_width == m_cell_width &&
+                a.cell_height == m_cell_height;
+
+        auto snap = [&]() noexcept {
+                std::copy(to, to + 8, a.to);
+                a.valid = true;
+                a.active = false;
+                a.screen = m_screen;
+                a.scroll_delta = m_screen->scroll_delta;
+                a.insert_delta = m_screen->insert_delta;
+                a.cell_width = m_cell_width;
+                a.cell_height = m_cell_height;
+                cursor_animation_stop_ticking();
+                return true;
+        };
+
+        if (!same_context)
+                return snap();
+
+        if (!std::equal(to, to + 8, a.to)) {
+                /* Start from wherever the corners are now, so a cursor that
+                 * moves again mid-flight turns without jumping. */
+                double from[8];
+                if (a.active) {
+                        auto done = false;
+                        cursor_animation_corners(now_us, from, &done);
+                } else {
+                        std::copy(a.to, a.to + 8, from);
+                }
+
+                auto const fx = (from[0] + from[2] + from[4] + from[6]) / 4;
+                auto const fy = (from[1] + from[3] + from[5] + from[7]) / 4;
+                auto const tx = (to[0] + to[2] + to[4] + to[6]) / 4;
+                auto const ty = (to[1] + to[3] + to[5] + to[7]) / 4;
+                auto const dx = tx - fx, dy = ty - fy;
+                auto const distance = std::hypot(dx, dy);
+
+                /* Typing moves the cursor one cell along the line; a trail
+                 * there is noise, so only the smooth glide applies. */
+                auto const step = std::abs(dy) < m_cell_height / 2.0 &&
+                        std::abs(dx) <= m_cell_width * 1.5;
+                auto const trail = m_cursor_trail && !step;
+
+                if ((!m_cursor_smooth && !trail) || distance < 0.5)
+                        return snap();
+
+                std::copy(from, from + 8, a.from);
+                std::copy(to, to + 8, a.to);
+                a.start_us = now_us;
+
+                /* With a trail, the corners facing the direction of travel
+                 * arrive in a third of the time and those facing away take
+                 * all of it, stretching the cursor into a smear. */
+                auto const base_us = m_cursor_animation_duration_ms * 1000.0;
+                for (auto i = 0; i < 4; ++i) {
+                        auto factor = 1.0;
+                        if (trail) {
+                                auto const ox = to[2 * i] - tx, oy = to[2 * i + 1] - ty;
+                                auto const olen = std::hypot(ox, oy);
+                                auto const dot = olen > 0 ? (ox * dx + oy * dy) / (olen * distance) : 0.0;
+                                factor = 1.0 - 0.65 * (dot + 1.0) / 2.0;
+                        }
+                        a.duration_us[i] = base_us * factor;
+                }
+
+                /* A smooth cursor is the moving shape itself, so the real one
+                 * waits for it to land. A trail alone follows a cursor that is
+                 * already there, and fades as it catches up. */
+                a.hide_cursor = m_cursor_smooth;
+                a.alpha = m_cursor_smooth ? 1.0 : 0.8;
+                a.active = true;
+
+                if (m_cursor_animation_tick_id == 0)
+                        m_cursor_animation_tick_id =
+                                gtk_widget_add_tick_callback(m_widget,
+                                                             cursor_animation_tick_cb,
+                                                             this,
+                                                             nullptr);
+        }
+
+        if (!a.active)
+                return true;
+
+        double xy[8];
+        auto done = false;
+        cursor_animation_corners(now_us, xy, &done);
+        if (done) {
+                a.active = false;
+                cursor_animation_stop_ticking();
+                return true;
+        }
+
+        auto alpha = a.alpha;
+        if (!a.hide_cursor) {
+                auto const t = double(now_us - a.start_us) / (m_cursor_animation_duration_ms * 1000.0);
+                alpha *= 1.0 - std::clamp(t, 0.0, 1.0);
+        }
+        m_draw.fill_polygon(xy, 4, &color, alpha);
+
+        return !a.hide_cursor;
+}
+
 void
 Terminal::paint_cursor()
 {
@@ -10057,16 +10304,22 @@ Terminal::paint_cursor()
 	gboolean blink, selected, focus;
 
         //FIXMEchpe this should already be reflected in the m_cursor_blink_state below
-	if (!m_modes_private.DEC_TEXT_CURSOR())
+	if (!m_modes_private.DEC_TEXT_CURSOR()) {
+                cursor_animation_reset();
 		return;
+        }
 
-        if (m_im_preedit_active)
+        if (m_im_preedit_active) {
+                cursor_animation_reset();
                 return;
+        }
 
 	focus = m_has_focus;
 	blink = m_cursor_blink_state;
 
-	if (focus && !blink)
+	/* While the cursor animates, it is painted even in the blink-off
+	 * phase, so the geometry is needed regardless. */
+	if (focus && !blink && !cursor_animation_enabled())
 		return;
 
         lcol = m_screen->cursor.col;
@@ -10074,10 +10327,11 @@ Terminal::paint_cursor()
 	width = m_cell_width;
 	height = m_cell_height;
 
-        if (!cursor_is_onscreen())
+        if (!cursor_is_onscreen() ||
+            CLAMP(lcol, 0, m_column_count - 1) != lcol) {
+                cursor_animation_reset();
                 return;
-        if (CLAMP(lcol, 0, m_column_count - 1) != lcol)
-		return;
+        }
 
         /* Need to ensure the ringview is updated. */
         ringview_update();
@@ -10110,7 +10364,12 @@ Terminal::paint_cursor()
 	x = item.x;
 	y = item.y;
 
-        switch (decscusr_cursor_shape()) {
+        /* The filled area of the cursor: the stem, the underline or the
+         * block. This is also the shape the animation moves. */
+        auto const shape = decscusr_cursor_shape();
+        int stem_width = 0;
+        struct { int x, y, width, height; } area{};
+        switch (shape) {
 
 		case CursorShape::eIBEAM: {
                         /* Draw at the very left of the cell (before the spacing), even in case of CJK.
@@ -10120,8 +10379,6 @@ Terminal::paint_cursor()
                          * and also this is where it looks good if background colors change, including
                          * Shift+arrows highlighting experience in some editors. As per the behavior of
                          * word processors, don't increase the height by the line spacing. */
-                        int stem_width;
-
                         stem_width = (int) (((float) (m_char_ascent + m_char_descent)) * m_cursor_aspect_ratio + 0.5);
                         stem_width = CLAMP (stem_width, VTE_LINE_WIDTH, m_cell_width);
 
@@ -10129,19 +10386,7 @@ Terminal::paint_cursor()
                         if (bidirow->vis_is_rtl(vcol))
                                 x += item.columns * m_cell_width - stem_width;
 
-                        m_draw.fill_rectangle(
-                                                 x, y + m_char_padding.top, stem_width, m_char_ascent + m_char_descent,
-                                                 &bg);
-
-                        /* Show the direction of the current character if the paragraph contains a mixture
-                         * of directions.
-                         * FIXME Do this for the other cursor shapes, too. Need to find a good visual design. */
-                        if (focus && bidirow->has_foreign())
-                                m_draw.fill_rectangle(
-                                                         bidirow->vis_is_rtl(vcol) ? x - stem_width : x + stem_width,
-                                                         y + m_char_padding.top,
-                                                         stem_width, stem_width,
-                                                         &bg);
+                        area = {x, y + m_char_padding.top, stem_width, int(m_char_ascent + m_char_descent)};
 			break;
                 }
 
@@ -10169,10 +10414,8 @@ Terminal::paint_cursor()
                                 right = MAX(right, r);
                         }
 
-                        m_draw.fill_rectangle(
-                                                 x + left, y + m_cell_height - m_char_padding.bottom - line_height,
-                                                 right - left, line_height,
-                                                 &bg);
+                        area = {x + left, int(y + m_cell_height - m_char_padding.bottom - line_height),
+                                right - left, line_height};
 			break;
                 }
 
@@ -10187,14 +10430,46 @@ Terminal::paint_cursor()
                                 cursor_width = MAX(cursor_width, r);
 			}
 
+                        area = {x, y, cursor_width, height};
+			break;
+	}
+
+        /* Only the focused cursor animates; the hollow unfocused one snaps. */
+        auto draw_cursor = true;
+        if (focus)
+                draw_cursor = cursor_animation_paint(area.x, area.y, area.width, area.height, bg);
+        else
+                cursor_animation_reset();
+
+	if (!draw_cursor || (focus && !blink))
+		return;
+
+        switch (shape) {
+
+		case CursorShape::eIBEAM:
+                        m_draw.fill_rectangle(area.x, area.y, area.width, area.height, &bg);
+
+                        /* Show the direction of the current character if the paragraph contains a mixture
+                         * of directions.
+                         * FIXME Do this for the other cursor shapes, too. Need to find a good visual design. */
+                        if (focus && bidirow->has_foreign())
+                                m_draw.fill_rectangle(
+                                                         bidirow->vis_is_rtl(vcol) ? x - stem_width : x + stem_width,
+                                                         y + m_char_padding.top,
+                                                         stem_width, stem_width,
+                                                         &bg);
+			break;
+
+		case CursorShape::eUNDERLINE:
+                        m_draw.fill_rectangle(area.x, area.y, area.width, area.height, &bg);
+			break;
+
+		case CursorShape::eBLOCK: {
                         uint32_t const attr_mask = m_allow_bold ? ~0 : ~VTE_ATTR_BOLD_MASK;
 
 			if (focus) {
 				/* just reverse the character under the cursor */
-                                m_draw.fill_rectangle(
-							     x, y,
-                                                         cursor_width, height,
-                                                         &bg);
+                                m_draw.fill_rectangle(area.x, area.y, area.width, area.height, &bg);
 
                                 if (cell && cell->c != 0 && cell->c != ' ' && cell->c != '\t') {
                                         draw_cells(
@@ -10212,12 +10487,13 @@ Terminal::paint_cursor()
                                 m_draw.draw_rectangle(
 							     x - VTE_LINE_WIDTH,
 							     y - VTE_LINE_WIDTH,
-							     cursor_width + 2*VTE_LINE_WIDTH,
+							     area.width + 2*VTE_LINE_WIDTH,
                                                          height + 2*VTE_LINE_WIDTH,
                                                          &bg);
 			}
 
 			break;
+                }
 	}
 }
 

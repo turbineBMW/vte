@@ -246,6 +246,30 @@ DrawingGsk::draw_rectangle(int x,
         gtk_snapshot_append_border(m_snapshot, &rounded, border_width, rgba);
 }
 
+void
+DrawingGsk::fill_polygon(double const* xy,
+                         size_t n_points,
+                         vte::color::rgb const* color,
+                         double alpha) const
+{
+        g_assert(color);
+        g_assert(m_snapshot);
+
+        if (n_points < 3)
+                return;
+
+        auto builder = gsk_path_builder_new();
+        gsk_path_builder_move_to(builder, float(xy[0]), float(xy[1]));
+        for (auto i = size_t{1}; i < n_points; ++i)
+                gsk_path_builder_line_to(builder, float(xy[2 * i]), float(xy[2 * i + 1]));
+        gsk_path_builder_close(builder);
+        auto path = gsk_path_builder_free_to_path(builder);
+
+        auto const rgba = color->rgba(alpha);
+        gtk_snapshot_append_fill(m_snapshot, path, GSK_FILL_RULE_WINDING, &rgba);
+        gsk_path_unref(path);
+}
+
 cairo_t*
 DrawingGsk::begin_cairo(int x,
                         int y,

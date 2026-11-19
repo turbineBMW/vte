@@ -1021,6 +1021,15 @@ try
                 case PROP_ENABLE_ITERM2_IMAGES:
                         g_value_set_boolean (value, vte_terminal_get_enable_iterm2_images (terminal));
                         break;
+                case PROP_CURSOR_SMOOTH:
+                        g_value_set_boolean (value, vte_terminal_get_cursor_smooth (terminal));
+                        break;
+                case PROP_CURSOR_TRAIL:
+                        g_value_set_boolean (value, vte_terminal_get_cursor_trail (terminal));
+                        break;
+                case PROP_CURSOR_ANIMATION_DURATION:
+                        g_value_set_uint (value, vte_terminal_get_cursor_animation_duration (terminal));
+                        break;
                 case PROP_ENCODING:
                         g_value_set_string (value, vte_terminal_get_encoding (terminal));
                         break;
@@ -1189,6 +1198,15 @@ try
                         break;
                 case PROP_ENABLE_ITERM2_IMAGES:
                         vte_terminal_set_enable_iterm2_images (terminal, g_value_get_boolean (value));
+                        break;
+                case PROP_CURSOR_SMOOTH:
+                        vte_terminal_set_cursor_smooth (terminal, g_value_get_boolean (value));
+                        break;
+                case PROP_CURSOR_TRAIL:
+                        vte_terminal_set_cursor_trail (terminal, g_value_get_boolean (value));
+                        break;
+                case PROP_CURSOR_ANIMATION_DURATION:
+                        vte_terminal_set_cursor_animation_duration (terminal, g_value_get_uint (value));
                         break;
                 case PROP_ENCODING:
                         vte_terminal_set_encoding (terminal, g_value_get_string (value), NULL);
@@ -2399,6 +2417,47 @@ vte_terminal_class_init(VteTerminalClass *klass)
                                       false,
 #endif
                                       (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY));
+
+        /**
+         * VteTerminal:cursor-smooth:
+         *
+         * Whether the cursor glides to its new position instead of jumping
+         * there. Has no effect when the desktop turns animations off.
+         *
+         * Since: 0.84.1-images
+         */
+        pspecs[PROP_CURSOR_SMOOTH] =
+                g_param_spec_boolean ("cursor-smooth", nullptr, nullptr,
+                                      false,
+                                      (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY));
+
+        /**
+         * VteTerminal:cursor-trail:
+         *
+         * Whether the cursor leaves a fading trail when it jumps further
+         * than the next cell. Has no effect when the desktop turns
+         * animations off.
+         *
+         * Since: 0.84.1-images
+         */
+        pspecs[PROP_CURSOR_TRAIL] =
+                g_param_spec_boolean ("cursor-trail", nullptr, nullptr,
+                                      false,
+                                      (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY));
+
+        /**
+         * VteTerminal:cursor-animation-duration:
+         *
+         * How long, in milliseconds, the cursor's glide and trail last.
+         * 0 turns them off.
+         *
+         * Since: 0.84.1-images
+         */
+        pspecs[PROP_CURSOR_ANIMATION_DURATION] =
+                g_param_spec_uint ("cursor-animation-duration", nullptr, nullptr,
+                                   0, VTE_CURSOR_ANIMATION_DURATION_MAX,
+                                   VTE_CURSOR_ANIMATION_DURATION_DEFAULT,
+                                   (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY));
 
 
         /**
@@ -7615,6 +7674,145 @@ catch (...)
 {
         vte::log_exception();
         return false;
+}
+
+/**
+ * vte_terminal_set_cursor_smooth:
+ * @terminal: a #VteTerminal
+ * @enabled: whether the cursor glides to its new position
+ *
+ * Sets whether the cursor glides to its new position instead of jumping there.
+ *
+ * Since: 0.84.1-images
+ */
+void
+vte_terminal_set_cursor_smooth(VteTerminal *terminal,
+                               gboolean enabled) noexcept
+try
+{
+        g_return_if_fail(VTE_IS_TERMINAL(terminal));
+
+        if (WIDGET(terminal)->set_cursor_smooth(enabled != FALSE))
+                g_object_notify_by_pspec(G_OBJECT(terminal), pspecs[PROP_CURSOR_SMOOTH]);
+}
+catch (...)
+{
+        vte::log_exception();
+}
+
+/**
+ * vte_terminal_get_cursor_smooth:
+ * @terminal: a #VteTerminal
+ *
+ * Returns: %TRUE if the cursor glides to its new position
+ *
+ * Since: 0.84.1-images
+ */
+gboolean
+vte_terminal_get_cursor_smooth(VteTerminal *terminal) noexcept
+try
+{
+        g_return_val_if_fail(VTE_IS_TERMINAL(terminal), FALSE);
+
+        return WIDGET(terminal)->cursor_smooth();
+}
+catch (...)
+{
+        vte::log_exception();
+        return false;
+}
+
+/**
+ * vte_terminal_set_cursor_trail:
+ * @terminal: a #VteTerminal
+ * @enabled: whether the cursor leaves a trail
+ *
+ * Sets whether the cursor leaves a fading trail when it jumps.
+ *
+ * Since: 0.84.1-images
+ */
+void
+vte_terminal_set_cursor_trail(VteTerminal *terminal,
+                              gboolean enabled) noexcept
+try
+{
+        g_return_if_fail(VTE_IS_TERMINAL(terminal));
+
+        if (WIDGET(terminal)->set_cursor_trail(enabled != FALSE))
+                g_object_notify_by_pspec(G_OBJECT(terminal), pspecs[PROP_CURSOR_TRAIL]);
+}
+catch (...)
+{
+        vte::log_exception();
+}
+
+/**
+ * vte_terminal_get_cursor_trail:
+ * @terminal: a #VteTerminal
+ *
+ * Returns: %TRUE if the cursor leaves a trail when it jumps
+ *
+ * Since: 0.84.1-images
+ */
+gboolean
+vte_terminal_get_cursor_trail(VteTerminal *terminal) noexcept
+try
+{
+        g_return_val_if_fail(VTE_IS_TERMINAL(terminal), FALSE);
+
+        return WIDGET(terminal)->cursor_trail();
+}
+catch (...)
+{
+        vte::log_exception();
+        return false;
+}
+
+/**
+ * vte_terminal_set_cursor_animation_duration:
+ * @terminal: a #VteTerminal
+ * @duration_ms: the duration in milliseconds
+ *
+ * Sets how long the cursor's glide and trail last. 0 turns them off.
+ *
+ * Since: 0.84.1-images
+ */
+void
+vte_terminal_set_cursor_animation_duration(VteTerminal *terminal,
+                                           guint duration_ms) noexcept
+try
+{
+        g_return_if_fail(VTE_IS_TERMINAL(terminal));
+
+        auto const ms = int(std::min(duration_ms, guint{VTE_CURSOR_ANIMATION_DURATION_MAX}));
+        if (WIDGET(terminal)->set_cursor_animation_duration(ms))
+                g_object_notify_by_pspec(G_OBJECT(terminal), pspecs[PROP_CURSOR_ANIMATION_DURATION]);
+}
+catch (...)
+{
+        vte::log_exception();
+}
+
+/**
+ * vte_terminal_get_cursor_animation_duration:
+ * @terminal: a #VteTerminal
+ *
+ * Returns: how long the cursor's glide and trail last, in milliseconds
+ *
+ * Since: 0.84.1-images
+ */
+guint
+vte_terminal_get_cursor_animation_duration(VteTerminal *terminal) noexcept
+try
+{
+        g_return_val_if_fail(VTE_IS_TERMINAL(terminal), 0);
+
+        return guint(WIDGET(terminal)->cursor_animation_duration());
+}
+catch (...)
+{
+        vte::log_exception();
+        return 0;
 }
 
 template<>
