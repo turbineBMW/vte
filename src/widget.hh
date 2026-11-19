@@ -623,6 +623,8 @@ public:
         bool cursor_trail() const noexcept { return m_terminal->cursor_trail(); }
         bool set_cursor_animation_duration(int ms) noexcept { return m_terminal->set_cursor_animation_duration(ms); }
         int cursor_animation_duration() const noexcept { return m_terminal->cursor_animation_duration(); }
+        bool set_background_opacity_cells(bool enabled) noexcept { return m_terminal->set_background_opacity_cells(enabled); }
+        bool background_opacity_cells() const noexcept { return m_terminal->background_opacity_cells(); }
         bool set_kitty_graphics_enabled(bool enabled) noexcept { return m_terminal->set_kitty_graphics_enabled(enabled); }
         bool kitty_graphics_enabled() const noexcept { return m_terminal->kitty_graphics_enabled(); }
         bool set_iterm2_images_enabled(bool enabled) noexcept { return m_terminal->set_iterm2_images_enabled(enabled); }
