@@ -87,6 +87,24 @@ along a line (typing). Neither effect animates the unfocused cursor, runs
 when the view or the text under the cursor scrolled, or runs when GTK's
 `gtk-enable-animations` is off.
 
+### Translucent cell backgrounds
+
+```c
+void     vte_terminal_set_background_opacity_cells(VteTerminal*, gboolean);
+gboolean vte_terminal_get_background_opacity_cells(VteTerminal*);
+```
+
+with a matching `background-opacity-cells` property, off by default. On,
+cells with a background colour other than the default one (TUI panels,
+the selection, reverse video) are drawn with the default background's
+alpha instead of opaque. Only the fills fade; text, images and the cursor
+stay opaque. While it is on and that alpha is below 1, `draw()` clears
+only the area around the cell grid and `draw_rows()` paints the grid's
+default background itself, so a coloured cell isn't layered over the
+translucent default background (which would add up to nearly opaque).
+Images stacked below the background therefore show under the default
+background too, not only under coloured cells.
+
 ## Building
 
 ```sh
@@ -125,3 +143,6 @@ decoding, file medium rules, the image store and its eviction order).
 - `src/vte.cc`: `paint_cursor()` works out the cursor's area, then
   `cursor_animation_paint()` moves it on GTK's frame clock.
   `src/drawing-*.{hh,cc}`: `fill_polygon()` for the smear.
+- `src/vte.cc`: `draw()` leaves the cell grid uncleared and `draw_rows()`
+  paints it when cell backgrounds are translucent.
+  `src/drawing-*.hh`: `fill_cell_background()` takes an alpha.

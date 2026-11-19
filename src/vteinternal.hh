@@ -890,6 +890,9 @@ public:
 
 	/* Background */
         double m_background_alpha{1.};
+        /* Whether cells with a non-default background colour are drawn
+         * with m_background_alpha too, instead of opaque. */
+        bool m_background_opacity_cells{false};
 
         /* Bell */
         int64_t m_bell_timestamp;
@@ -1794,6 +1797,13 @@ public:
         bool set_backspace_binding(EraseMode binding);
         auto backspace_binding() const noexcept { return m_backspace_binding; }
         bool set_background_alpha(double alpha);
+        bool set_background_opacity_cells(bool enabled) noexcept;
+        constexpr bool background_opacity_cells() const noexcept { return m_background_opacity_cells; }
+        /* Whether draw_rows() paints the default background of the cell grid
+         * itself, so translucent cell backgrounds aren't layered over it. */
+        constexpr bool translucent_cell_backgrounds() const noexcept {
+                return m_background_opacity_cells && m_clear_background && m_background_alpha < 1.;
+        }
         bool set_bold_is_bright(bool setting);
         bool set_cell_height_scale(double scale);
         bool set_cell_width_scale(double scale);

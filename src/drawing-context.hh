@@ -217,7 +217,8 @@ public:
         virtual void fill_cell_background(size_t column,
                                           size_t row,
                                           size_t n_colums,
-                                          vte::color::rgb const* color) = 0;
+                                          vte::color::rgb const* color,
+                                          double alpha) = 0;
         virtual void flush_background(Rectangle const& rect) = 0;
 
         virtual void draw_surface_with_color_mask(

@@ -2383,6 +2383,18 @@ Terminal::set_background_alpha(double alpha)
         return true;
 }
 
+bool
+Terminal::set_background_opacity_cells(bool enabled) noexcept
+{
+        if (enabled == m_background_opacity_cells)
+                return false;
+
+        m_background_opacity_cells = enabled;
+        invalidate_all();
+
+        return true;
+}
+
 void
 Terminal::set_colors_default()
 {
@@ -9514,6 +9526,9 @@ Terminal::draw_rows(VteScreen *screen_,
                                             int(row_height * (end_row - start_row))};
         m_draw.begin_background(bg_rect, column_count, end_row - start_row);
 
+        auto const translucent_cells = translucent_cell_backgrounds();
+        auto const cell_alpha = m_background_opacity_cells ? m_background_alpha : 1.;
+
         /* The rect contains the area of the row, and is moved row-wise in the loop. */
 #if VTE_GTK == 3
         auto crect = vte::view::Rectangle{-m_border.left, start_y, rect_width, row_height};
@@ -9589,7 +9604,12 @@ Terminal::draw_rows(VteScreen *screen_,
                         if (back != VTE_DEFAULT_BG) {
                                 vte::color::rgb bg;
                                 rgb_from_index<8, 8, 8>(back, bg);
-                                m_draw.fill_cell_background(i, row - start_row, (j - i), &bg);
+                                m_draw.fill_cell_background(i, row - start_row, (j - i), &bg, cell_alpha);
+                        } else if (translucent_cells) {
+                                /* draw() left this area uncleared; see there. */
+                                m_draw.fill_cell_background(i, row - start_row, (j - i),
+                                                            get_color(ColorPaletteIndex::default_bg()),
+                                                            m_background_alpha);
                         }
 
 #if VTE_GTK == 3
@@ -10651,20 +10671,48 @@ Terminal::draw(cairo_region_t const* region) noexcept
          * is entirely to the left/top of this point.
          */
 
+        auto const first_row = first_displayed_row();
+        auto const last_row = last_displayed_row();
+
         if (G_LIKELY(m_clear_background)) {
-                m_draw.clear(
 #if VTE_GTK == 3
-                             -m_border.left,
-                             -m_border.top,
-                             allocated_width,
-                             allocated_height,
+                int const clear_x = -m_border.left;
+                int const clear_y = -m_border.top;
+                int const x1 = clear_x + allocated_width;
+                int const y1 = clear_y + allocated_height;
 #elif VTE_GTK == 4
-                             -m_border.left - m_style_border.left,
-                             -m_border.top - m_style_border.top,
-                             allocated_width + m_style_border.left + m_style_border.right,
-                             allocated_height + m_style_border.top + m_style_border.bottom,
+                int const clear_x = -m_border.left - m_style_border.left;
+                int const clear_y = -m_border.top - m_style_border.top;
+                int const x1 = clear_x + allocated_width + m_style_border.left + m_style_border.right;
+                int const y1 = clear_y + allocated_height + m_style_border.top + m_style_border.bottom;
 #endif
-                             get_color(ColorPaletteIndex::default_bg()), m_background_alpha);
+                auto const* const bg = get_color(ColorPaletteIndex::default_bg());
+
+                if (G_LIKELY(!translucent_cell_backgrounds())) {
+                        m_draw.clear(clear_x, clear_y, x1 - clear_x, y1 - clear_y,
+                                     bg, m_background_alpha);
+                } else {
+                        /* Translucent cell backgrounds drawn over the translucent
+                         * default background would add up to nearly opaque. So
+                         * leave out the part of the grid draw_rows() paints (its
+                         * background rect, cut to the vertical clip set below),
+                         * and let draw_rows() paint the default background there.
+                         */
+                        auto const hole_x0 = 0;
+                        auto const hole_x1 = int(m_column_count * m_cell_width);
+                        auto const hole_y0 = std::max(int(row_to_pixel(first_row)), 0);
+                        auto const hole_y1 = std::max(hole_y0,
+                                                      std::min(int(row_to_pixel(last_row + 1)),
+                                                               allocated_height - m_border.top - m_border.bottom));
+                        auto const fill = [&](int x0, int y0, int xe, int ye) {
+                                if (xe > x0 && ye > y0)
+                                        m_draw.clear(x0, y0, xe - x0, ye - y0, bg, m_background_alpha);
+                        };
+                        fill(clear_x, clear_y, x1, hole_y0);        /* above */
+                        fill(clear_x, hole_y1, x1, y1);             /* below */
+                        fill(clear_x, hole_y0, hole_x0, hole_y1);   /* left */
+                        fill(hole_x1, hole_y0, x1, hole_y1);        /* right */
+                }
         }
 
         /* Clip vertically, for the sake of smooth scrolling. We want the top and bottom paddings to be unused.
@@ -10697,8 +10745,6 @@ Terminal::draw(cairo_region_t const* region) noexcept
         m_text_to_blink = false;
 
         /* and now paint them */
-        auto const first_row = first_displayed_row();
-        auto const last_row = last_displayed_row();
 
 #if WITH_SIXEL
         /* Images stacked below everything, including cell backgrounds */

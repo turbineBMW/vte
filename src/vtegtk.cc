@@ -1030,6 +1030,9 @@ try
                 case PROP_CURSOR_ANIMATION_DURATION:
                         g_value_set_uint (value, vte_terminal_get_cursor_animation_duration (terminal));
                         break;
+                case PROP_BACKGROUND_OPACITY_CELLS:
+                        g_value_set_boolean (value, vte_terminal_get_background_opacity_cells (terminal));
+                        break;
                 case PROP_ENCODING:
                         g_value_set_string (value, vte_terminal_get_encoding (terminal));
                         break;
@@ -1207,6 +1210,9 @@ try
                         break;
                 case PROP_CURSOR_ANIMATION_DURATION:
                         vte_terminal_set_cursor_animation_duration (terminal, g_value_get_uint (value));
+                        break;
+                case PROP_BACKGROUND_OPACITY_CELLS:
+                        vte_terminal_set_background_opacity_cells (terminal, g_value_get_boolean (value));
                         break;
                 case PROP_ENCODING:
                         vte_terminal_set_encoding (terminal, g_value_get_string (value), NULL);
@@ -2458,6 +2464,22 @@ vte_terminal_class_init(VteTerminalClass *klass)
                                    0, VTE_CURSOR_ANIMATION_DURATION_MAX,
                                    VTE_CURSOR_ANIMATION_DURATION_DEFAULT,
                                    (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY));
+
+        /**
+         * VteTerminal:background-opacity-cells:
+         *
+         * Whether cells with a background colour other than the default
+         * one get the same opacity as the default background (the alpha
+         * of the colour given to vte_terminal_set_color_background()).
+         * Off, they are drawn opaque. Only the backgrounds fade; text,
+         * images and the cursor stay opaque.
+         *
+         * Since: 0.84.1-images
+         */
+        pspecs[PROP_BACKGROUND_OPACITY_CELLS] =
+                g_param_spec_boolean ("background-opacity-cells", nullptr, nullptr,
+                                      false,
+                                      (GParamFlags) (G_PARAM_READWRITE | G_PARAM_STATIC_STRINGS | G_PARAM_EXPLICIT_NOTIFY));
 
 
         /**
@@ -7813,6 +7835,53 @@ catch (...)
 {
         vte::log_exception();
         return 0;
+}
+
+/**
+ * vte_terminal_set_background_opacity_cells:
+ * @terminal: a #VteTerminal
+ * @enabled: whether coloured cell backgrounds share the default background's opacity
+ *
+ * Sets whether cells with a non-default background colour are drawn with
+ * the default background's alpha instead of opaque.
+ *
+ * Since: 0.84.1-images
+ */
+void
+vte_terminal_set_background_opacity_cells(VteTerminal *terminal,
+                                          gboolean enabled) noexcept
+try
+{
+        g_return_if_fail(VTE_IS_TERMINAL(terminal));
+
+        if (WIDGET(terminal)->set_background_opacity_cells(enabled != FALSE))
+                g_object_notify_by_pspec(G_OBJECT(terminal), pspecs[PROP_BACKGROUND_OPACITY_CELLS]);
+}
+catch (...)
+{
+        vte::log_exception();
+}
+
+/**
+ * vte_terminal_get_background_opacity_cells:
+ * @terminal: a #VteTerminal
+ *
+ * Returns: %TRUE if coloured cell backgrounds share the default background's opacity
+ *
+ * Since: 0.84.1-images
+ */
+gboolean
+vte_terminal_get_background_opacity_cells(VteTerminal *terminal) noexcept
+try
+{
+        g_return_val_if_fail(VTE_IS_TERMINAL(terminal), FALSE);
+
+        return WIDGET(terminal)->background_opacity_cells();
+}
+catch (...)
+{
+        vte::log_exception();
+        return false;
 }
 
 template<>

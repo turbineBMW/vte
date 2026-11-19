@@ -650,6 +650,14 @@ void vte_terminal_set_cursor_animation_duration(VteTerminal *terminal,
 _VTE_PUBLIC
 guint vte_terminal_get_cursor_animation_duration(VteTerminal *terminal) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
 
+/* Translucent cell backgrounds */
+_VTE_PUBLIC
+void vte_terminal_set_background_opacity_cells(VteTerminal *terminal,
+                                               gboolean enabled) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
+
+_VTE_PUBLIC
+gboolean vte_terminal_get_background_opacity_cells(VteTerminal *terminal) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
+
 _VTE_PUBLIC
 void vte_terminal_set_xalign(VteTerminal* terminal,
                              VteAlign align) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
