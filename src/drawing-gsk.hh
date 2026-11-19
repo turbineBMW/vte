@@ -112,6 +112,10 @@ public:
                             int width,
                             int height,
                             vte::color::rgb const* color) const override;
+        void fill_polygon(double const* xy,
+                          size_t n_points,
+                          vte::color::rgb const* color,
+                          double alpha) const override;
 
         void draw_surface_with_color_mask(GdkTexture *texture,
                                           int x,

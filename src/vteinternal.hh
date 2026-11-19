@@ -584,6 +584,43 @@ public:
         int64_t m_cursor_blink_time_ms;     /* how long the cursor has been blinking yet */
         bool m_has_focus{false};            /* is the widget focused */
 
+        /* Cursor animation. When the cursor moves, its four corners travel
+         * from where they were drawn to where the cursor now is. With
+         * m_cursor_smooth they travel together and the real cursor is drawn
+         * once they arrive, so the cursor glides. With m_cursor_trail the
+         * corners facing the direction of travel arrive first and the
+         * others lag behind, leaving a smear. */
+        bool m_cursor_smooth{false};
+        bool m_cursor_trail{false};
+        int m_cursor_animation_duration_ms{VTE_CURSOR_ANIMATION_DURATION_DEFAULT};
+        struct CursorAnimation {
+                double from[8]{};       /* corners TL, TR, BR, BL as (x, y) pairs */
+                double to[8]{};
+                double duration_us[4]{};
+                int64_t start_us{0};
+                bool valid{false};      /* @to holds the last painted cursor */
+                bool active{false};     /* corners are still travelling */
+                bool hide_cursor{false};/* draw the real cursor only on arrival */
+                double alpha{1.0};
+                /* A change in any of these snaps the cursor instead of animating it */
+                VteScreen const* screen{nullptr};
+                double scroll_delta{0.0};
+                long insert_delta{0};
+                long cell_width{0};
+                long cell_height{0};
+        } m_cursor_animation;
+        guint m_cursor_animation_tick_id{0};
+
+        bool cursor_animation_enabled() const noexcept;
+        void cursor_animation_reset() noexcept;
+        void cursor_animation_stop_ticking() noexcept;
+        void cursor_animation_corners(int64_t now_us, double* xy, bool* done) const noexcept;
+        bool cursor_animation_paint(int x, int y, int width, int height,
+                                    vte::color::rgb const& color) noexcept;
+        static gboolean cursor_animation_tick_cb(GtkWidget* widget,
+                                                 GdkFrameClock* clock,
+                                                 gpointer data) noexcept;
+
         /* Contents blinking */
         bool text_blink_timer_callback();
         vte::glib::Timer m_text_blink_timer{std::bind(&Terminal::text_blink_timer_callback,
@@ -658,6 +695,13 @@ public:
                 update_images_enabled();
                 return changed;
         }
+
+        bool set_cursor_smooth(bool enabled) noexcept;
+        bool set_cursor_trail(bool enabled) noexcept;
+        bool set_cursor_animation_duration(int ms) noexcept;
+        constexpr bool cursor_smooth() const noexcept { return m_cursor_smooth; }
+        constexpr bool cursor_trail() const noexcept { return m_cursor_trail; }
+        constexpr int cursor_animation_duration() const noexcept { return m_cursor_animation_duration_ms; }
 
         constexpr bool sixel_enabled() const noexcept { return m_sixel_enabled; }
         constexpr bool kitty_graphics_enabled() const noexcept { return m_kitty_enabled; }

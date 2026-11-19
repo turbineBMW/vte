@@ -628,6 +628,28 @@ void vte_terminal_set_enable_iterm2_images(VteTerminal *terminal,
 _VTE_PUBLIC
 gboolean vte_terminal_get_enable_iterm2_images(VteTerminal *terminal) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
 
+/* Cursor animation */
+_VTE_PUBLIC
+void vte_terminal_set_cursor_smooth(VteTerminal *terminal,
+                                    gboolean enabled) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
+
+_VTE_PUBLIC
+gboolean vte_terminal_get_cursor_smooth(VteTerminal *terminal) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
+
+_VTE_PUBLIC
+void vte_terminal_set_cursor_trail(VteTerminal *terminal,
+                                   gboolean enabled) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
+
+_VTE_PUBLIC
+gboolean vte_terminal_get_cursor_trail(VteTerminal *terminal) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
+
+_VTE_PUBLIC
+void vte_terminal_set_cursor_animation_duration(VteTerminal *terminal,
+                                                guint duration_ms) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
+
+_VTE_PUBLIC
+guint vte_terminal_get_cursor_animation_duration(VteTerminal *terminal) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);
+
 _VTE_PUBLIC
 void vte_terminal_set_xalign(VteTerminal* terminal,
                              VteAlign align) _VTE_CXX_NOEXCEPT _VTE_GNUC_NONNULL(1);

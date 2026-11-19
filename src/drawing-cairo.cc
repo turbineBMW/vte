@@ -250,6 +250,29 @@ DrawingCairo::draw_rectangle(int x,
         cairo_restore(m_cr);
 }
 
+void
+DrawingCairo::fill_polygon(double const* xy,
+                           size_t n_points,
+                           vte::color::rgb const* color,
+                           double alpha) const
+{
+        g_assert(color);
+        g_assert(m_cr);
+
+        if (n_points < 3)
+                return;
+
+        cairo_save(m_cr);
+        cairo_set_operator(m_cr, CAIRO_OPERATOR_OVER);
+        cairo_move_to(m_cr, xy[0], xy[1]);
+        for (auto i = size_t{1}; i < n_points; ++i)
+                cairo_line_to(m_cr, xy[2 * i], xy[2 * i + 1]);
+        cairo_close_path(m_cr);
+        _vte_set_source_color_alpha(m_cr, color, alpha);
+        cairo_fill(m_cr);
+        cairo_restore(m_cr);
+}
+
 cairo_t*
 DrawingCairo::begin_cairo(int x,
                           int y,

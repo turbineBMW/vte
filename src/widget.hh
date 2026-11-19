@@ -617,6 +617,12 @@ public:
 
         bool set_sixel_enabled(bool enabled) noexcept { return m_terminal->set_sixel_enabled(enabled); }
         bool sixel_enabled() const noexcept { return m_terminal->sixel_enabled(); }
+        bool set_cursor_smooth(bool enabled) noexcept { return m_terminal->set_cursor_smooth(enabled); }
+        bool cursor_smooth() const noexcept { return m_terminal->cursor_smooth(); }
+        bool set_cursor_trail(bool enabled) noexcept { return m_terminal->set_cursor_trail(enabled); }
+        bool cursor_trail() const noexcept { return m_terminal->cursor_trail(); }
+        bool set_cursor_animation_duration(int ms) noexcept { return m_terminal->set_cursor_animation_duration(ms); }
+        int cursor_animation_duration() const noexcept { return m_terminal->cursor_animation_duration(); }
         bool set_kitty_graphics_enabled(bool enabled) noexcept { return m_terminal->set_kitty_graphics_enabled(enabled); }
         bool kitty_graphics_enabled() const noexcept { return m_terminal->kitty_graphics_enabled(); }
         bool set_iterm2_images_enabled(bool enabled) noexcept { return m_terminal->set_iterm2_images_enabled(enabled); }

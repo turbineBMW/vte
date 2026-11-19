@@ -204,6 +204,12 @@ public:
                                     int width,
                                     int height,
                                     vte::color::rgb const* color) const = 0;
+        /* Fill the closed polygon through @n_points corners, given as
+         * consecutive (x, y) pairs in @xy. */
+        virtual void fill_polygon(double const* xy,
+                                  size_t n_points,
+                                  vte::color::rgb const* color,
+                                  double alpha) const = 0;
 
         virtual void begin_background(Rectangle const& rect,
                                       size_t columns,

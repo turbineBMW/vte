@@ -63,6 +63,30 @@ properties. Together with the existing `enable-sixel` they all default to
 `TRUE`. The `vte-2.91-gtk4` test application gains `--no-sixel`,
 `--no-kitty-graphics` and `--no-iterm2-images`.
 
+### Cursor animation
+
+```c
+void     vte_terminal_set_cursor_smooth(VteTerminal*, gboolean);
+gboolean vte_terminal_get_cursor_smooth(VteTerminal*);
+void     vte_terminal_set_cursor_trail(VteTerminal*, gboolean);
+gboolean vte_terminal_get_cursor_trail(VteTerminal*);
+void     vte_terminal_set_cursor_animation_duration(VteTerminal*, guint ms);
+guint    vte_terminal_get_cursor_animation_duration(VteTerminal*);
+```
+
+with matching `cursor-smooth`, `cursor-trail` and
+`cursor-animation-duration` properties. Both effects are off by default.
+The duration defaults to 150 ms, its maximum is 1000 ms, and 0 turns the
+effects off. With `cursor-smooth`, the focused cursor glides to its new
+position, and the real cursor (with the inverted glyph under a block) is
+painted only once it lands. With `cursor-trail`, the corners facing the
+direction of travel arrive first and the others lag behind, leaving a smear.
+Without `cursor-smooth`, the cursor appears at its destination right away
+and the smear fades as it catches up. A trail is skipped for one-cell moves
+along a line (typing). Neither effect animates the unfocused cursor, runs
+when the view or the text under the cursor scrolled, or runs when GTK's
+`gtk-enable-animations` is off.
+
 ## Building
 
 ```sh
@@ -98,3 +122,6 @@ decoding, file medium rules, the image store and its eviction order).
 - `src/vte-iterm2.cc`: OSC 1337 handling and the shared
   `place_inline_image()`.
 - `src/vtegtk.cc`, `src/vte/vteterminal.h`: the new properties and functions.
+- `src/vte.cc`: `paint_cursor()` works out the cursor's area, then
+  `cursor_animation_paint()` moves it on GTK's frame clock.
+  `src/drawing-*.{hh,cc}`: `fill_polygon()` for the smear.
